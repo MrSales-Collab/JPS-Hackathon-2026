@@ -276,6 +276,76 @@ with tab2:
         )
 
     st.divider()
+    st.subheader("🚦 Urgency Dashboard")
+
+    appts = st.session_state.appointments.copy()
+    high_pts   = appts[appts["Urgency"] == "High"][["Patient Name", "Doctor", "Date", "Time", "Reason", "Status"]]
+    medium_pts = appts[appts["Urgency"] == "Medium"][["Patient Name", "Doctor", "Date", "Time", "Reason", "Status"]]
+    low_pts    = appts[appts["Urgency"] == "Low"][["Patient Name", "Doctor", "Date", "Time", "Reason", "Status"]]
+
+    urg_c1, urg_c2, urg_c3 = st.columns(3)
+
+    with urg_c1:
+        st.markdown(
+            f"<div style='background:#ffd6d6;border-left:6px solid #cc0000;padding:10px 14px;border-radius:6px;margin-bottom:8px'>"
+            f"<b style='color:#cc0000'>🔴 HIGH — {len(high_pts)} patient{'s' if len(high_pts) != 1 else ''}</b>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if len(high_pts):
+            for _, row in high_pts.iterrows():
+                st.markdown(
+                    f"<div style='background:#fff0f0;border:1px solid #ffaaaa;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-size:0.9em'>"
+                    f"<b>{row['Patient Name']}</b><br>"
+                    f"👨‍⚕️ {row['Doctor']} &nbsp;|&nbsp; 📅 {row['Date']} {row['Time']}<br>"
+                    f"<span style='color:#555'>{row['Reason']}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.caption("No high-urgency patients.")
+
+    with urg_c2:
+        st.markdown(
+            f"<div style='background:#fff8d6;border-left:6px solid #cc8800;padding:10px 14px;border-radius:6px;margin-bottom:8px'>"
+            f"<b style='color:#cc8800'>🟡 MEDIUM — {len(medium_pts)} patient{'s' if len(medium_pts) != 1 else ''}</b>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if len(medium_pts):
+            for _, row in medium_pts.iterrows():
+                st.markdown(
+                    f"<div style='background:#fffcf0;border:1px solid #ffe08a;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-size:0.9em'>"
+                    f"<b>{row['Patient Name']}</b><br>"
+                    f"👨‍⚕️ {row['Doctor']} &nbsp;|&nbsp; 📅 {row['Date']} {row['Time']}<br>"
+                    f"<span style='color:#555'>{row['Reason']}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.caption("No medium-urgency patients.")
+
+    with urg_c3:
+        st.markdown(
+            f"<div style='background:#d6f5d6;border-left:6px solid #007700;padding:10px 14px;border-radius:6px;margin-bottom:8px'>"
+            f"<b style='color:#007700'>🟢 LOW — {len(low_pts)} patient{'s' if len(low_pts) != 1 else ''}</b>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if len(low_pts):
+            for _, row in low_pts.iterrows():
+                st.markdown(
+                    f"<div style='background:#f0fff0;border:1px solid #90ee90;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-size:0.9em'>"
+                    f"<b>{row['Patient Name']}</b><br>"
+                    f"👨‍⚕️ {row['Doctor']} &nbsp;|&nbsp; 📅 {row['Date']} {row['Time']}<br>"
+                    f"<span style='color:#555'>{row['Reason']}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.caption("No low-urgency patients.")
+
+    st.divider()
     st.subheader("All Appointments")
 
     fc1, fc2 = st.columns(2)
@@ -389,4 +459,4 @@ with tab3:
 
     st.divider()
     st.subheader("Message History")
-    st.dataframe(st.session_state.messages, use_container_width=True, hide_index=True)
+    st.dataframe(st.session_state.messages, width="stretch", hide_index=True)
