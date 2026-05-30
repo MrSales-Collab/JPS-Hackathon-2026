@@ -52,15 +52,20 @@ def _demo_response(prompt: str) -> str:
 
 
 def _call_gemini(prompt: str) -> str:
-    import google.generativeai as genai
+    from google import genai
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         raise ValueError("GEMINI_API_KEY not set")
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(prompt)
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model="gemini-flash-latest",
+        contents=prompt,
+    )
     return response.text
 
+
+# Stores the last error from call_ai() for display in the UI
+_last_ai_error: str = ""
 
 def call_ai(prompt: str) -> tuple[str, bool]:
     """
@@ -69,9 +74,12 @@ def call_ai(prompt: str) -> tuple[str, bool]:
     is_demo=True means the fallback was used (no key, quota exceeded, etc.).
     To switch providers: change AI_PROVIDER above, or add a new _call_<provider>() branch.
     """
+    global _last_ai_error
     try:
         if AI_PROVIDER == "gemini":
-            return _call_gemini(prompt), False
+            result = _call_gemini(prompt)
+            _last_ai_error = ""
+            return result, False
         # Future providers:
         # elif AI_PROVIDER == "anthropic":
         #     return _call_anthropic(prompt), False
@@ -79,7 +87,8 @@ def call_ai(prompt: str) -> tuple[str, bool]:
         #     return _call_openai(prompt), False
         else:
             raise ValueError(f"Unknown AI_PROVIDER: {AI_PROVIDER}")
-    except Exception:
+    except Exception as e:
+        _last_ai_error = f"{type(e).__name__}: {str(e)[:300]}"
         return _demo_response(prompt), True
 
 
@@ -184,8 +193,12 @@ def urgency_color(level: str) -> str:
 
 def ai_box(title: str, content: str, is_demo: bool):
     """Render a labeled AI result box with a demo badge when applicable."""
-    badge = " *(demo mode — add API key for live results)*" if is_demo else ""
-    st.info(f"**{title}**{badge}\n\n{content}")
+    if is_demo:
+        err = _last_ai_error
+        badge = f" *(demo mode — reason: `{err}`)*" if err else " *(demo mode — GEMINI_API_KEY not set)*"
+        st.warning(f"**{title}**{badge}\n\n{content}")
+    else:
+        st.info(f"**{title}**\n\n{content}")
 
 
 # ---------------------------------------------------------------------------
