@@ -1,36 +1,29 @@
-# [Project name]
+# Healthcare Scheduling App
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Streamlit-based healthcare scheduling application with patient intake, appointment management, and patient communication tools.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `streamlit run app.py` — run the healthcare scheduling app (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Python 3.11 + Streamlit (main app)
+- pnpm workspaces, Node.js 24, TypeScript 5.9 (API server)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- `app.py` — main Streamlit application (Intake, Scheduling, Communication tabs)
+- `.streamlit/config.toml` — Streamlit server config (port 5000, headless, 0.0.0.0)
+- `scripts/src/main.py` — standalone Python script
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Three-tab healthcare scheduling interface:
+- **Intake** — register new patients and assign them to a doctor
+- **Scheduling** — view and update appointments across Dr. Smith, Dr. Jones, and Dr. Brown
+- **Communication** — send messages/reminders to patients and view message history
 
 ## User preferences
 
@@ -38,7 +31,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Streamlit session state holds appointments and messages in memory (no database yet)
+- Do not change `.streamlit/config.toml` — server settings are pre-configured
 
 ## Pointers
 
