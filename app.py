@@ -254,7 +254,7 @@ with tab1:
     st.divider()
     st.subheader("Recent Intake Records")
     display_cols = ["Patient Name", "DOB", "Phone", "Doctor", "Urgency", "Status"]
-    st.dataframe(st.session_state.appointments[display_cols], use_container_width=True, hide_index=True)
+    st.dataframe(st.session_state.appointments[display_cols], width="stretch", hide_index=True)
 
 # ---------------------------------------------------------------------------
 # TAB 2 — SCHEDULING
@@ -289,7 +289,7 @@ with tab2:
         df = df[df["Doctor"] == filter_doctor]
     if filter_status != "All":
         df = df[df["Status"] == filter_status]
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 
     st.divider()
     st.subheader("📅 Scheduling Agent — Find Best Slots")
