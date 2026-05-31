@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MedSchedule · Team HQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@10..48,400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4efe6; --paper-2:#ece5d8; --card:#fbf8f1; --ink:#1f2420;
+    --muted:#6b6358; --line:#ddd3c2; --sage:#3f7d5e; --sage-soft:#dce9df;
+    --clay:#c2693f; --clay-soft:#f3e0d4; --gold:#c79a3c; --shadow:0 16px 40px -22px rgba(60,50,30,.45);
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:
+      radial-gradient(900px 500px at 90% -5%, #efe7d6 0%, transparent 60%),
+      var(--paper);
+    color:var(--ink); font-family:"Hanken Grotesk",sans-serif; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"Spline Sans Mono",monospace}
+  h1,h2,h3{font-family:"Bricolage Grotesque",sans-serif; line-height:1.05; letter-spacing:-.02em; font-weight:700}
+
+  /* ---- TOP BAR + PROGRESS ---- */
+  .topbar{position:sticky; top:0; z-index:50; background:rgba(244,239,230,.92);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--line)}
+  .topbar-inner{max-width:1080px; margin:0 auto; padding:14px 22px;
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap}
+  .brand{font-family:"Bricolage Grotesque",sans-serif; font-weight:800; font-size:19px;
+    letter-spacing:-.02em; display:flex; align-items:center; gap:9px; white-space:nowrap}
+  .brand .mark{width:26px; height:26px; border-radius:8px; background:var(--sage);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:15px}
+  .prog-wrap{flex:1; min-width:200px}
+  .prog-top{display:flex; justify-content:space-between; font-size:11px;
+    text-transform:uppercase; letter-spacing:.16em; color:var(--muted); margin-bottom:5px}
+  .prog-top .pct{font-family:"Spline Sans Mono",monospace; color:var(--sage); font-weight:500}
+  .prog-track{height:9px; background:var(--paper-2); border-radius:100px; overflow:hidden;
+    border:1px solid var(--line)}
+  .prog-fill{height:100%; width:0%; border-radius:100px;
+    background:linear-gradient(90deg, var(--sage), #5fa37c);
+    transition:width .6s cubic-bezier(.4,0,.2,1)}
+
+  /* ---- TABS ---- */
+  nav.tabs{max-width:1080px; margin:0 auto; padding:0 22px;
+    display:flex; gap:4px; overflow-x:auto; border-bottom:1px solid var(--line)}
+  .tab-btn{background:none; border:none; font-family:"Hanken Grotesk",sans-serif;
+    font-size:15px; font-weight:600; color:var(--muted); padding:14px 16px; cursor:pointer;
+    border-bottom:2px solid transparent; white-space:nowrap; transition:color .2s, border-color .2s}
+  .tab-btn:hover{color:var(--ink)}
+  .tab-btn.active{color:var(--sage); border-color:var(--sage)}
+
+  /* ---- PANELS ---- */
+  main{max-width:1080px; margin:0 auto; padding:34px 22px 90px}
+  .panel{display:none; animation:rise .5s ease}
+  .panel.show{display:block}
+  @keyframes rise{from{opacity:0; transform:translateY(12px)}to{opacity:1; transform:none}}
+  .eyebrow{font-family:"Spline Sans Mono",monospace; font-size:12px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--clay); margin-bottom:14px}
+
+  /* PROJECT / HERO */
+  .hero h1{font-size:clamp(40px,7vw,76px); margin-bottom:18px}
+  .hero h1 .em{color:var(--sage); font-style:italic; font-family:"Bricolage Grotesque",sans-serif}
+  .hero .sub{font-size:clamp(17px,2.3vw,21px); color:var(--muted); max-width:600px; margin-bottom:26px}
+  .meta-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:8px}
+  .meta{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px}
+  .meta .k{font-family:"Spline Sans Mono",monospace; font-size:11px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--muted); margin-bottom:4px}
+  .meta .v{font-weight:700; font-size:16px}
+  .deadline{margin-top:26px; background:var(--clay-soft); border:1px solid #e6c4ac;
+    border-radius:14px; padding:16px 20px; display:flex; align-items:center; gap:14px}
+  .deadline .big{font-family:"Bricolage Grotesque",sans-serif; font-weight:800; font-size:22px; color:var(--clay)}
+
+  h2.section{font-size:clamp(26px,4vw,38px); margin-bottom:16px}
+  p.lead{font-size:17px; color:#4b463d; max-width:680px; margin-bottom:16px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:var(--shadow)}
+  .quote{border-left:4px solid var(--gold); padding:16px 22px; background:var(--card);
+    border-radius:0 14px 14px 0; font-family:"Bricolage Grotesque",sans-serif; font-style:italic;
+    font-size:21px; line-height:1.3; max-width:700px; box-shadow:var(--shadow)}
+  .quote small{display:block; font-family:"Hanken Grotesk",sans-serif; font-style:normal;
+    font-size:13px; color:var(--muted); margin-top:10px; letter-spacing:.02em}
+  .pain-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-top:24px}
+  .pain{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px}
+  .pain .ico{font-size:22px; margin-bottom:8px}
+  .pain h3{font-size:17px; margin-bottom:5px}
+  .pain p{font-size:14px; color:var(--muted)}
+
+  /* IDEA / AGENTS */
+  .agent-row{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:22px 0}
+  @media(max-width:720px){.agent-row{grid-template-columns:1fr}}
+  .agent{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px;
+    position:relative; box-shadow:var(--shadow)}
+  .agent .step{font-family:"Spline Sans Mono",monospace; font-size:11px; color:var(--muted)}
+  .agent h3{font-size:20px; margin:6px 0 8px; color:var(--sage)}
+  .agent p{font-size:14px; color:#4b463d}
+  .agent .tag{display:inline-block; margin-top:12px; font-size:11px; font-family:"Spline Sans Mono",monospace;
+    background:var(--sage-soft); color:var(--sage); padding:4px 10px; border-radius:100px}
+  .flowline{text-align:center; color:var(--muted); font-family:"Spline Sans Mono",monospace;
+    font-size:13px; margin:6px 0 22px}
+  .stack-list{list-style:none; display:grid; gap:10px; margin-top:18px}
+  .stack-list li{background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:14px 18px; display:flex; gap:14px; align-items:baseline}
+  .stack-list b{font-family:"Bricolage Grotesque",sans-serif; min-width:120px; display:inline-block}
+  .stack-list span{font-size:14px; color:var(--muted)}
+
+  /* PLAN / CHECKLIST */
+  .phase{margin-bottom:26px}
+  .phase-head{display:flex; align-items:baseline; gap:12px; margin-bottom:10px}
+  .phase-head h3{font-size:15px; font-family:"Spline Sans Mono",monospace; font-weight:500;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--clay)}
+  .phase-head .when{font-size:12px; color:var(--muted); font-family:"Spline Sans Mono",monospace}
+  .task{display:flex; gap:14px; align-items:flex-start; background:var(--card);
+    border:1px solid var(--line); border-radius:13px; padding:15px 18px; margin-bottom:8px;
+    cursor:pointer; transition:border-color .2s, background .2s; user-select:none}
+  .task:hover{border-color:var(--sage)}
+  .task.done{background:var(--sage-soft); border-color:#bcd6c4}
+  .task .box{flex-shrink:0; width:24px; height:24px; border:2px solid var(--line); border-radius:7px;
+    display:flex; align-items:center; justify-content:center; margin-top:1px; transition:.2s; background:#fff}
+  .task.done .box{background:var(--sage); border-color:var(--sage)}
+  .task .box svg{opacity:0; transition:.2s; transform:scale(.6)}
+  .task.done .box svg{opacity:1; transform:scale(1)}
+  .task .body .t{font-weight:600; font-size:15.5px; transition:.2s}
+  .task.done .body .t{text-decoration:line-through; color:var(--muted)}
+  .task .body .d{font-size:13px; color:var(--muted); margin-top:2px}
+  .task .who{margin-left:auto; flex-shrink:0; font-size:11px; font-family:"Spline Sans Mono",monospace;
+    padding:4px 9px; border-radius:100px; background:var(--paper-2); color:var(--muted); white-space:nowrap}
+  .reset-row{margin-top:10px}
+  .btn-ghost{font-family:"Spline Sans Mono",monospace; font-size:12px; background:none;
+    border:1px solid var(--line); border-radius:100px; padding:8px 16px; color:var(--muted); cursor:pointer}
+  .btn-ghost:hover{border-color:var(--clay); color:var(--clay)}
+  .celebrate{margin-top:16px; padding:18px; border-radius:14px; background:var(--sage-soft);
+    border:1px solid #bcd6c4; text-align:center; font-family:"Bricolage Grotesque",sans-serif;
+    font-weight:700; color:var(--sage); display:none}
+  .celebrate.show{display:block}
+
+  /* CHAT / NOTES */
+  .chat-note{font-size:13px; color:var(--muted); background:var(--clay-soft); border:1px solid #e6c4ac;
+    border-radius:12px; padding:12px 16px; margin-bottom:18px}
+  .chat-box{display:flex; flex-direction:column; height:460px; background:var(--card);
+    border:1px solid var(--line); border-radius:16px; overflow:hidden; box-shadow:var(--shadow)}
+  .chat-log{flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:12px}
+  .msg{max-width:78%; padding:10px 14px; border-radius:14px; font-size:14.5px; line-height:1.45;
+    background:var(--paper-2); align-self:flex-start; border:1px solid var(--line)}
+  .msg .who{font-family:"Spline Sans Mono",monospace; font-size:11px; color:var(--sage);
+    margin-bottom:3px; font-weight:500}
+  .msg .time{font-size:10px; color:var(--muted); margin-top:4px; font-family:"Spline Sans Mono",monospace}
+  .msg.mine{align-self:flex-end; background:var(--sage-soft); border-color:#bcd6c4}
+  .chat-empty{margin:auto; color:var(--muted); font-size:14px; text-align:center}
+  .chat-input{display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); background:var(--card)}
+  .chat-input input[type=text]{font-family:"Hanken Grotesk",sans-serif; font-size:14px}
+  #chatName{width:120px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fff}
+  #chatMsg{flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fff}
+  #chatName:focus,#chatMsg:focus{outline:none; border-color:var(--sage)}
+  .send-btn{font-family:"Hanken Grotesk",sans-serif; font-weight:600; font-size:14px; background:var(--sage);
+    color:#fff; border:none; border-radius:10px; padding:0 20px; cursor:pointer; transition:.15s}
+  .send-btn:hover{background:#356b50}
+
+  /* ---- ARCHITECTURE ---- */
+  .arch-svg-wrap{background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:18px; box-shadow:var(--shadow); overflow-x:auto}
+  .arch-svg-wrap svg{display:block; width:100%; height:auto; min-width:560px}
+  .legend{display:flex; gap:18px; flex-wrap:wrap; margin-top:16px; font-size:13px; color:var(--muted)}
+  .legend span{display:inline-flex; align-items:center; gap:7px}
+  .legend i{width:13px; height:13px; border-radius:4px; display:inline-block}
+  .layer-note{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin-top:22px}
+  .layer-note .card h3{font-size:16px; margin-bottom:5px; color:var(--sage)}
+  .layer-note .card p{font-size:13.5px; color:var(--muted)}
+  .layer-note .card .mono{font-size:12px; color:var(--clay)}
+
+  /* ---- WIREFRAME ---- */
+  .wf-toggle{display:flex; gap:6px; flex-wrap:wrap; margin:18px 0 22px}
+  .wf-tab{font-family:"Hanken Grotesk",sans-serif; font-size:13.5px; font-weight:600;
+    background:var(--card); border:1px solid var(--line); border-radius:100px; padding:9px 16px;
+    cursor:pointer; color:var(--muted); transition:.18s}
+  .wf-tab:hover{border-color:var(--sage); color:var(--ink)}
+  .wf-tab.active{background:var(--sage); color:#fff; border-color:var(--sage)}
+  .browser{background:var(--card); border:1px solid var(--line); border-radius:16px;
+    overflow:hidden; box-shadow:var(--shadow); max-width:760px}
+  .browser-bar{background:var(--paper-2); border-bottom:1px solid var(--line); padding:11px 16px;
+    display:flex; align-items:center; gap:8px}
+  .browser-bar .dot{width:11px; height:11px; border-radius:50%}
+  .browser-bar .url{margin-left:12px; font-family:"Spline Sans Mono",monospace; font-size:12px;
+    color:var(--muted); background:#fff; border:1px solid var(--line); border-radius:7px;
+    padding:5px 12px; flex:1}
+  .screen{padding:24px 26px; min-height:380px}
+  .wf-screen{display:none} .wf-screen.show{display:block}
+  .wf-h{font-family:"Bricolage Grotesque",sans-serif; font-weight:700; font-size:21px; margin-bottom:4px}
+  .wf-sub{font-size:13px; color:var(--muted); margin-bottom:20px}
+  .wf-label{font-size:12px; font-weight:600; color:var(--ink); margin:14px 0 5px; display:block}
+  .wf-field{background:#fff; border:1px solid var(--line); border-radius:9px; padding:11px 13px;
+    font-size:13.5px; color:var(--muted)}
+  .wf-area{min-height:62px}
+  .wf-radio{display:flex; gap:10px; margin-top:6px}
+  .wf-chip{border:1px solid var(--line); border-radius:100px; padding:7px 16px; font-size:13px; background:#fff}
+  .wf-chip.on{background:var(--sage-soft); border-color:var(--sage); color:var(--sage); font-weight:600}
+  .wf-btn{background:var(--sage); color:#fff; border-radius:9px; padding:11px 20px; font-size:14px;
+    font-weight:600; display:inline-block; margin-top:18px}
+  .wf-btn.ghost{background:#fff; color:var(--sage); border:1px solid var(--sage)}
+  .wf-callout{border-radius:11px; padding:14px 16px; margin:14px 0; font-size:13.5px; border:1px solid}
+  .wf-callout.sage{background:var(--sage-soft); border-color:#bcd6c4}
+  .wf-callout.clay{background:var(--clay-soft); border-color:#e6c4ac}
+  .wf-callout .ct{font-family:"Spline Sans Mono",monospace; font-size:11px; letter-spacing:.1em;
+    text-transform:uppercase; margin-bottom:5px; font-weight:500}
+  .wf-callout.sage .ct{color:var(--sage)} .wf-callout.clay .ct{color:var(--clay)}
+  .wf-slots{display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin:10px 0}
+  @media(max-width:560px){.wf-slots{grid-template-columns:repeat(2,1fr)}}
+  .wf-slot{background:#fff; border:1px solid var(--sage); color:var(--sage); border-radius:9px;
+    padding:11px 6px; text-align:center; font-size:13.5px; font-weight:600}
+  .wf-slot.muted{border-color:var(--line); color:var(--muted); font-weight:400}
+  .wf-table{width:100%; border-collapse:collapse; font-size:13px; margin-top:8px}
+  .wf-table th{text-align:left; font-family:"Spline Sans Mono",monospace; font-size:11px;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--line)}
+  .wf-table td{padding:9px 10px; border-bottom:1px solid var(--line); color:#4b463d}
+  .wf-pill{font-size:11px; padding:2px 9px; border-radius:100px; font-weight:600}
+  .wf-pill.hi{background:var(--clay-soft); color:var(--clay)}
+  .wf-pill.med{background:#f6edd2; color:var(--gold)}
+  .wf-pill.lo{background:var(--sage-soft); color:var(--sage)}
+  .wf-msg{background:#fff; border:1px solid var(--line); border-radius:11px; padding:15px; font-size:13.5px;
+    line-height:1.5; color:#4b463d}
+  .wf-tabs-mini{display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px}
+  .wf-tabs-mini span{font-size:12.5px; padding:8px 12px; color:var(--muted); border-bottom:2px solid transparent}
+  .wf-tabs-mini span.on{color:var(--sage); border-color:var(--sage); font-weight:600}
+
+  /* ---- COLOR THEMES (override the root variables) ---- */
+  body[data-theme="dark"]{
+    --paper:#14171d; --paper-2:#1d212a; --card:#1b1f27; --ink:#eef1f4; --muted:#9aa4af;
+    --line:#2d333d; --sage:#5fb88c; --sage-soft:#1f3a2c; --clay:#e58a5a; --clay-soft:#3a2418;
+    --gold:#d6b45c; --shadow:0 18px 44px -22px rgba(0,0,0,.8);
+  }
+  body[data-theme="dark"]{ background:radial-gradient(900px 500px at 90% -5%, #1b2129 0%, transparent 60%), var(--paper); }
+  body[data-theme="dark"] .topbar{ background:rgba(20,23,29,.92); }
+  body[data-theme="dark"] #chatName, body[data-theme="dark"] #chatMsg,
+  body[data-theme="dark"] .wf-field, body[data-theme="dark"] .wf-msg,
+  body[data-theme="dark"] .wf-slot, body[data-theme="dark"] .browser-bar .url,
+  body[data-theme="dark"] .wf-chip{ background:#22262f; color:var(--ink); }
+
+  body[data-theme="white"]{
+    --paper:#ffffff; --paper-2:#f4f4f5; --card:#ffffff; --ink:#101114; --muted:#6a6f78;
+    --line:#e6e7ea; --sage:#2f7d5e; --sage-soft:#e4f1ea; --clay:#c2693f; --clay-soft:#f7e7dc;
+    --gold:#b8902f; --shadow:0 12px 30px -20px rgba(20,20,30,.25);
+  }
+  body[data-theme="white"]{ background:#ffffff; }
+  body[data-theme="white"] .topbar{ background:rgba(255,255,255,.94); }
+
+  /* Color-blind safe (Okabe–Ito): blue + orange, high contrast, never red/green-only */
+  body[data-theme="cb"]{
+    --paper:#f6f6f6; --paper-2:#e9e9e9; --card:#ffffff; --ink:#0a0a0a; --muted:#4f4f4f;
+    --line:#c7c7c7; --sage:#0072b2; --sage-soft:#d4e7f4; --clay:#e69f00; --clay-soft:#fbeccc;
+    --gold:#56b4e9; --shadow:0 12px 30px -20px rgba(0,0,0,.3);
+  }
+  body[data-theme="cb"]{ background:#f6f6f6; }
+  body[data-theme="cb"] .topbar{ background:rgba(246,246,246,.94); }
+  body[data-theme="cb"] .wf-pill.hi{ background:#fbeccc; color:#8a5a00; }
+  body[data-theme="cb"] .wf-pill.med{ background:#d4e7f4; color:#004c78; }
+  body[data-theme="cb"] .wf-pill.lo{ background:#e2e2e2; color:#222; }
+
+  /* ---- FONT SIZE THEMES ---- */
+  body.fs-small{ zoom:0.9; }
+  body.fs-medium{ zoom:1; }
+  body.fs-large{ zoom:1.15; }
+
+  /* ---- SETTINGS CONTROL ---- */
+  .gear-btn{font-family:"Hanken Grotesk",sans-serif; font-size:14px; font-weight:600;
+    background:var(--card); border:1px solid var(--line); border-radius:100px; padding:8px 15px;
+    cursor:pointer; color:var(--ink); display:inline-flex; align-items:center; gap:7px;
+    white-space:nowrap; transition:.18s}
+  .gear-btn:hover{border-color:var(--sage); color:var(--sage)}
+  .settings-pop{position:absolute; top:62px; right:22px; z-index:60; width:300px;
+    background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px;
+    box-shadow:0 24px 60px -20px rgba(40,30,15,.5); display:none}
+  .settings-pop.open{display:block; animation:rise .25s ease}
+  .settings-pop h4{font-family:"Spline Sans Mono",monospace; font-size:11px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--muted); margin:0 0 9px}
+  .settings-pop h4:not(:first-child){margin-top:18px}
+  .opt-row{display:flex; gap:7px; flex-wrap:wrap}
+  .opt{flex:1; min-width:60px; text-align:center; font-family:"Hanken Grotesk",sans-serif;
+    font-size:13px; font-weight:600; background:var(--paper-2); border:1px solid var(--line);
+    border-radius:10px; padding:9px 6px; cursor:pointer; color:var(--muted); transition:.15s}
+  .opt:hover{border-color:var(--sage); color:var(--ink)}
+  .opt.active{background:var(--sage); color:#fff; border-color:var(--sage)}
+  .opt .sw{display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:5px; vertical-align:middle; border:1px solid rgba(0,0,0,.15)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="mark">✚</span> MedSchedule · Team HQ</div>
+    <div class="prog-wrap">
+      <div class="prog-top"><span>Project progress</span><span class="pct" id="pctLabel">0%</span></div>
+      <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+    </div>
+    <button class="gear-btn" id="gearBtn">⚙ Display</button>
+  </div>
+  <div class="settings-pop" id="settingsPop">
+    <h4>Text size</h4>
+    <div class="opt-row" id="fsRow">
+      <button class="opt" data-fs="fs-small">Small</button>
+      <button class="opt active" data-fs="fs-medium">Medium</button>
+      <button class="opt" data-fs="fs-large">Large</button>
+    </div>
+    <h4>Color theme</h4>
+    <div class="opt-row" id="themeRow">
+      <button class="opt active" data-theme="light"><span class="sw" style="background:#f4efe6"></span>Light</button>
+      <button class="opt" data-theme="dark"><span class="sw" style="background:#14171d"></span>Dark</button>
+      <button class="opt" data-theme="white"><span class="sw" style="background:#ffffff"></span>White</button>
+      <button class="opt" data-theme="cb"><span class="sw" style="background:#0072b2"></span>Color-blind</button>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab-btn active" data-tab="project">Project</button>
+    <button class="tab-btn" data-tab="motives">Motives</button>
+    <button class="tab-btn" data-tab="idea">The Idea</button>
+    <button class="tab-btn" data-tab="arch">Architecture</button>
+    <button class="tab-btn" data-tab="wireframe">Wireframe</button>
+    <button class="tab-btn" data-tab="plan">Plan</button>
+    <button class="tab-btn" data-tab="status">Build Status</button>
+    <button class="tab-btn" data-tab="chat">Team Chat</button>
+  </nav>
+</div>
+
+<main>
+  <!-- PROJECT -->
+  <section class="panel show" id="project">
+    <div class="hero">
+      <div class="eyebrow">HackJPS 2026 · Healthcare Track</div>
+      <h1>MedSchedule — an <span class="em">agentic</span> front-desk assistant.</h1>
+      <p class="sub">Three coordinating AI agents that take the scheduling busywork off a clinic receptionist's plate. Built in a weekend, designed to win Best Use of AI/ML.</p>
+      <div class="meta-grid">
+        <div class="meta"><div class="k">Team</div><div class="v">3 builders</div></div>
+        <div class="meta"><div class="k">Track</div><div class="v">Best Use of AI/ML</div></div>
+        <div class="meta"><div class="k">Stack</div><div class="v">Python · Streamlit</div></div>
+        <div class="meta"><div class="k">Engine</div><div class="v">Google Gemini</div></div>
+      </div>
+      <div class="deadline">
+        <span style="font-size:26px">⏰</span>
+        <div><div class="big">Sunday · 11:45 PM EDT</div>
+        <div style="font-size:13px; color:var(--clay)">We aim to submit by 8 PM. Buffer is not optional.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MOTIVES -->
+  <section class="panel" id="motives">
+    <div class="eyebrow">Why we're building this</div>
+    <h2 class="section">A real person, a real headache.</h2>
+    <div class="quote">"There are too many phone calls to make, and patients get annoyed when their appointments keep changing."
+      <small>— Aryan's sister, who works the front desk at a clinic. She's our north star.</small></div>
+    <p class="lead" style="margin-top:22px">Receptionists juggle calls, hunt for open slots by hand, chase no-shows, and write reminders one by one. It's slow, stressful, and easy to get wrong. We're not diagnosing anyone — we're handing the front desk a smart assistant for the scheduling grind.</p>
+    <div class="pain-grid">
+      <div class="pain"><div class="ico">📞</div><h3>Too many calls</h3><p>Hours lost dialing patients to find a time that works.</p></div>
+      <div class="pain"><div class="ico">🔀</div><h3>Constant reshuffles</h3><p>Cancellations force manual re-juggling of the whole day.</p></div>
+      <div class="pain"><div class="ico">😤</div><h3>Frustrated patients</h3><p>Changing appointments and missed reminders annoy everyone.</p></div>
+    </div>
+  </section>
+
+  <!-- IDEA -->
+  <section class="panel" id="idea">
+    <div class="eyebrow">What we're building</div>
+    <h2 class="section">One orchestrator, three specialists.</h2>
+    <p class="lead">A receptionist enters a patient. The system reads the situation, suggests the best slots with reasons, books it, and drafts the reminder — each agent handing its work to the next.</p>
+    <div class="agent-row">
+      <div class="agent"><div class="step">AGENT 01 · runs first</div><h3>Triage</h3>
+        <p>Asks how the patient feels + their SMS/email preference, then flags urgency and recommends timing.</p>
+        <span class="tag">analyze → priority</span></div>
+      <div class="agent"><div class="step">AGENT 02 · core</div><h3>Scheduling</h3>
+        <p>Owns the calendar. Finds open slots that match the urgency, and can view, add, delete & search appointments.</p>
+        <span class="tag">calendar brain</span></div>
+      <div class="agent"><div class="step">AGENT 03 · last</div><h3>Communication</h3>
+        <p>Drafts the confirmation + day-of reminder in the patient's preferred channel, tone-matched to urgency.</p>
+        <span class="tag">draft → send (demo)</span></div>
+    </div>
+    <div class="flowline">intake → triage → scheduling → communication · each output feeds the next</div>
+    <h3 style="font-size:20px; margin:24px 0 4px">The toolkit</h3>
+    <ul class="stack-list">
+      <li><b>Replit</b><span>Where we built it (with the Replit Agent scaffolding the first version). Optionally moving to local VS Code now that it works.</span></li>
+      <li><b>Streamlit</b><span>Turns our Python into a clean web app — tables, buttons, callout boxes. No HTML needed.</span></li>
+      <li><b>Google Gemini (free)</b><span>Powers the three agents (model: gemini-flash-latest). Key stored in Secrets / env var, server-side & safe.</span></li>
+      <li><b>call_ai() abstraction</b><span>All agents route through one function — swap providers (Gemini → Claude, etc.) by editing just that one spot.</span></li>
+      <li><b>In-memory calendar</b><span>Our own appointment list in session_state — no Google Calendar rabbit hole. We explain every line.</span></li>
+      <li><b>Demo-mode fallback</b><span>If the key is missing or rate-limited, agents return a sample response so the app never crashes mid-demo.</span></li>
+      <li><b>Simulated send</b><span>The reminder is drafted & shown with a Send button. Real SMS/email = future roadmap.</span></li>
+    </ul>
+  </section>
+
+  <!-- ARCHITECTURE -->
+  <section class="panel" id="arch">
+    <div class="eyebrow">How it's wired</div>
+    <h2 class="section">Application architecture.</h2>
+    <p class="lead">Everything runs inside one Streamlit app. The receptionist talks to the UI; the orchestrator runs the three agents in order; each agent reads and writes the shared in-memory calendar; Google Gemini is the brain behind each agent (via a single call_ai() function).</p>
+    <div class="arch-svg-wrap">
+      <svg viewBox="0 0 760 470" xmlns="http://www.w3.org/2000/svg" font-family="Hanken Grotesk, sans-serif">
+        <defs>
+          <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3 L0,6 Z" fill="#6b6358"/>
+          </marker>
+          <marker id="arrowSage" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3 L0,6 Z" fill="#3f7d5e"/>
+          </marker>
+        </defs>
+
+        <!-- USER -->
+        <rect x="40" y="30" width="160" height="58" rx="12" fill="#f3e0d4" stroke="#c2693f" stroke-width="1.5"/>
+        <text x="120" y="55" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2420">👩‍⚕️ Receptionist</text>
+        <text x="120" y="74" text-anchor="middle" font-size="11" fill="#6b6358">enters patient + picks slot</text>
+
+        <!-- UI LAYER -->
+        <rect x="40" y="120" width="680" height="64" rx="12" fill="#fbf8f1" stroke="#3f7d5e" stroke-width="1.5"/>
+        <text x="60" y="146" font-size="13" font-weight="700" fill="#3f7d5e">STREAMLIT UI LAYER</text>
+        <text x="60" y="167" font-size="11.5" fill="#6b6358">Intake form · slot buttons · calendar table · message preview · callout boxes</text>
+
+        <!-- ORCHESTRATOR -->
+        <rect x="40" y="216" width="680" height="150" rx="14" fill="none" stroke="#3f7d5e" stroke-width="1.5" stroke-dasharray="6 5"/>
+        <text x="58" y="238" font-size="12" font-weight="700" fill="#3f7d5e" font-family="Spline Sans Mono, monospace">ORCHESTRATOR · plain Python, runs agents in sequence</text>
+
+        <!-- AGENT 1 -->
+        <rect x="62" y="256" width="190" height="92" rx="12" fill="#dce9df" stroke="#3f7d5e" stroke-width="1.3"/>
+        <text x="157" y="282" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1f2420">① Triage</text>
+        <text x="157" y="302" text-anchor="middle" font-size="10.5" fill="#4b463d">reads symptoms →</text>
+        <text x="157" y="317" text-anchor="middle" font-size="10.5" fill="#4b463d">urgency + timing</text>
+
+        <!-- AGENT 2 -->
+        <rect x="285" y="256" width="190" height="92" rx="12" fill="#dce9df" stroke="#3f7d5e" stroke-width="1.3"/>
+        <text x="380" y="282" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1f2420">② Scheduling</text>
+        <text x="380" y="302" text-anchor="middle" font-size="10.5" fill="#4b463d">finds slots, books,</text>
+        <text x="380" y="317" text-anchor="middle" font-size="10.5" fill="#4b463d">views & searches</text>
+
+        <!-- AGENT 3 -->
+        <rect x="508" y="256" width="190" height="92" rx="12" fill="#dce9df" stroke="#3f7d5e" stroke-width="1.3"/>
+        <text x="603" y="282" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1f2420">③ Communication</text>
+        <text x="603" y="302" text-anchor="middle" font-size="10.5" fill="#4b463d">drafts SMS/email</text>
+        <text x="603" y="317" text-anchor="middle" font-size="10.5" fill="#4b463d">reminder</text>
+
+        <!-- baton arrows between agents -->
+        <line x1="252" y1="302" x2="283" y2="302" stroke="#3f7d5e" stroke-width="2" marker-end="url(#arrowSage)"/>
+        <line x1="475" y1="302" x2="506" y2="302" stroke="#3f7d5e" stroke-width="2" marker-end="url(#arrowSage)"/>
+
+        <!-- CALENDAR STORE -->
+        <rect x="220" y="400" width="320" height="54" rx="12" fill="#ece5d8" stroke="#ddd3c2" stroke-width="1.5"/>
+        <text x="380" y="423" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2420">🗓️ In-memory Calendar (shared state)</text>
+        <text x="380" y="441" text-anchor="middle" font-size="10.5" fill="#6b6358">list of appointments · view / add / delete / search</text>
+
+        <!-- CLAUDE API -->
+        <rect x="560" y="30" width="160" height="58" rx="12" fill="#fbf8f1" stroke="#c79a3c" stroke-width="1.5"/>
+        <text x="640" y="55" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1f2420">🧠 Google Gemini</text>
+        <text x="640" y="74" text-anchor="middle" font-size="10.5" fill="#6b6358">gemini-flash-latest</text>
+
+        <!-- vertical connectors -->
+        <line x1="120" y1="88" x2="120" y2="118" stroke="#6b6358" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="120" y1="100" x2="120" y2="100" stroke="#6b6358" stroke-width="1.5"/>
+        <text x="135" y="106" font-size="10" fill="#6b6358">uses</text>
+        <line x1="380" y1="184" x2="380" y2="214" stroke="#6b6358" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <!-- agents to calendar -->
+        <line x1="157" y1="348" x2="280" y2="402" stroke="#9a8f7d" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <line x1="380" y1="348" x2="380" y2="398" stroke="#9a8f7d" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <line x1="603" y1="348" x2="480" y2="402" stroke="#9a8f7d" stroke-width="1.3" marker-end="url(#arrow)"/>
+        <!-- agents to claude -->
+        <line x1="640" y1="256" x2="640" y2="92" stroke="#c79a3c" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        <text x="650" y="200" font-size="10" fill="#c79a3c">API calls</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i style="background:#c2693f"></i> User</span>
+      <span><i style="background:#3f7d5e"></i> Our code (UI + agents)</span>
+      <span><i style="background:#ece5d8; border:1px solid #ddd3c2"></i> Shared data</span>
+      <span><i style="background:#c79a3c"></i> External AI</span>
+    </div>
+    <div class="layer-note">
+      <div class="card"><h3>Presentation</h3><p>Streamlit renders forms, buttons, tables & callout boxes. <span class="mono">app.py</span></p></div>
+      <div class="card"><h3>Logic</h3><p>The orchestrator calls each agent in order and passes outputs forward. <span class="mono">orchestrator()</span></p></div>
+      <div class="card"><h3>Data</h3><p>One Python list holds all appointments while the app runs. <span class="mono">st.session_state</span></p></div>
+      <div class="card"><h3>Intelligence</h3><p>Each agent sends a prompt to Gemini and parses the reply. <span class="mono">google-genai SDK</span></p></div>
+    </div>
+  </section>
+
+  <!-- WIREFRAME -->
+  <section class="panel" id="wireframe">
+    <div class="eyebrow">What it'll look like</div>
+    <h2 class="section">Wireframe walkthrough.</h2>
+    <p class="lead">Low-fi sketches of each screen so we agree on layout before building. This is the look we're aiming for — clean, like a real clinic tool.</p>
+    <div class="wf-toggle" id="wfToggle">
+      <button class="wf-tab active" data-wf="wf1">1 · Intake</button>
+      <button class="wf-tab" data-wf="wf2">2 · Triage result</button>
+      <button class="wf-tab" data-wf="wf3">3 · Scheduling</button>
+      <button class="wf-tab" data-wf="wf4">4 · Calendar</button>
+      <button class="wf-tab" data-wf="wf5">5 · Message</button>
+    </div>
+    <div class="browser">
+      <div class="browser-bar">
+        <span class="dot" style="background:#e06b5e"></span>
+        <span class="dot" style="background:#e8b84b"></span>
+        <span class="dot" style="background:#5fa37c"></span>
+        <span class="url">medschedule.repl.co</span>
+      </div>
+      <div class="screen">
+        <div class="wf-tabs-mini">
+          <span class="on">📋 Intake</span><span>📅 Scheduling</span><span>💬 Communication</span>
+        </div>
+
+        <!-- WF1 INTAKE -->
+        <div class="wf-screen show" id="wf1">
+          <div class="wf-h">New patient intake</div>
+          <div class="wf-sub">Receptionist fills this in while on the phone with the patient.</div>
+          <span class="wf-label">Patient name</span>
+          <div class="wf-field">Sarah Chen</div>
+          <span class="wf-label">How are you feeling? What's the reason for the visit?</span>
+          <div class="wf-field wf-area">Bad sore throat and a fever since yesterday, feeling pretty rough.</div>
+          <span class="wf-label">Preferred contact</span>
+          <div class="wf-radio"><span class="wf-chip on">● SMS</span><span class="wf-chip">○ Email</span></div>
+          <div class="wf-btn">Submit & run Triage →</div>
+        </div>
+
+        <!-- WF2 TRIAGE -->
+        <div class="wf-screen" id="wf2">
+          <div class="wf-h">Triage assessment</div>
+          <div class="wf-sub">The Triage agent read the symptoms and decided priority.</div>
+          <div class="wf-callout clay">
+            <div class="ct">🧠 Triage Agent</div>
+            <b>Urgency: HIGH</b> &nbsp;·&nbsp; Recommended timing: within 24 hours<br>
+            <span style="color:#6b6358">Reason: fever + sore throat suggests an infection worth seeing soon.</span>
+          </div>
+          <span class="wf-label">This priority is passed to the Scheduling agent automatically.</span>
+          <div class="wf-btn">Find available slots →</div>
+        </div>
+
+        <!-- WF3 SCHEDULING -->
+        <div class="wf-screen" id="wf3">
+          <div class="wf-h">Suggested appointment times</div>
+          <div class="wf-sub">Scheduling agent prioritized early slots because the patient is high-urgency.</div>
+          <div class="wf-callout sage">
+            <div class="ct">📅 Scheduling Agent</div>
+            Showing earliest openings with Dr. Smith — flagged urgent, so sooner is better.
+          </div>
+          <div class="wf-slots">
+            <div class="wf-slot">Mon 9:00</div>
+            <div class="wf-slot">Mon 10:30</div>
+            <div class="wf-slot">Tue 9:00</div>
+            <div class="wf-slot">Tue 11:30</div>
+          </div>
+          <div class="wf-btn ghost">📅 See more options</div>
+          <div class="wf-btn" style="margin-left:8px">Confirm selected →</div>
+        </div>
+
+        <!-- WF4 CALENDAR -->
+        <div class="wf-screen" id="wf4">
+          <div class="wf-h">Clinic calendar</div>
+          <div class="wf-sub">Doctors check this as their portal. Searchable by urgency, doctor, or day.</div>
+          <div class="wf-field" style="margin-bottom:8px">🔎 Search: "high urgency this week"</div>
+          <table class="wf-table">
+            <thead><tr><th>Day</th><th>Time</th><th>Doctor</th><th>Patient</th><th>Urgency</th></tr></thead>
+            <tbody>
+              <tr><td>Mon</td><td>9:00</td><td>Dr. Smith</td><td>Sarah Chen</td><td><span class="wf-pill hi">HIGH</span></td></tr>
+              <tr><td>Mon</td><td>2:00</td><td>Dr. Jones</td><td>John Doe</td><td><span class="wf-pill lo">LOW</span></td></tr>
+              <tr><td>Tue</td><td>10:30</td><td>Dr. Brown</td><td>Mike Johnson</td><td><span class="wf-pill med">MED</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- WF5 MESSAGE -->
+        <div class="wf-screen" id="wf5">
+          <div class="wf-h">Reminder draft</div>
+          <div class="wf-sub">Communication agent wrote this for SMS (the patient's choice).</div>
+          <div class="wf-callout sage"><div class="ct">💬 Communication Agent · SMS</div></div>
+          <div class="wf-msg">Hi Sarah! This is City Clinic confirming your appointment with Dr. Smith on Monday at 9:00 AM. Since you mentioned feeling unwell, we got you in early. Reply CONFIRM, or call us to reschedule.</div>
+          <div class="wf-btn">📲 Send (simulated)</div>
+        </div>
+      </div>
+    </div>
+    <p class="layer-note" style="display:block; font-size:13px; color:var(--muted); margin-top:16px">These are sketches, not the final design — Person B refines the real look in Streamlit during the Polish step. The point is agreeing on the flow and layout now.</p>
+  </section>
+
+  <!-- PLAN -->
+  <section class="panel" id="plan">
+    <div class="eyebrow">How we get there · tick as you go</div>
+    <h2 class="section">The build, step by step.</h2>
+    <p class="lead">Built in dependency order so we can stop anywhere and still have a working demo. Checking a box updates the progress bar up top.</p>
+    <div id="planRoot"></div>
+    <div class="celebrate" id="celebrate">🎉 Every step done. Submit it and go celebrate — you earned this.</div>
+    <div class="reset-row"><button class="btn-ghost" id="resetBtn">↺ Reset all progress</button></div>
+  </section>
+
+  <!-- BUILD STATUS -->
+  <section class="panel" id="status">
+    <div class="eyebrow">Where we actually are</div>
+    <h2 class="section">Build status &amp; what shipped.</h2>
+    <p class="lead">The app is feature-complete and running. Steps 1–7 are done; we're on Step 8 (video + Devpost write-up). Here's the honest snapshot, including things we added beyond the original plan.</p>
+
+    <h3 style="font-size:20px;margin:22px 0 8px">✅ Done — the full build</h3>
+    <ul class="stack-list">
+      <li><b>Setup</b><span>Streamlit app scaffolded with the Replit Agent, running live.</span></li>
+      <li><b>Intake form</b><span>Name, DOB, phone, doctor, reason, insurance. Submitting runs Triage.</span></li>
+      <li><b>Triage Agent</b><span>Live Gemini call → urgency level + recommended timing. Verified it reacts correctly (chest pain = high, checkup = low).</span></li>
+      <li><b>Scheduling Agent</b><span>Suggests open slots with reasons as clickable cards; clicking books it onto the calendar as Confirmed.</span></li>
+      <li><b>Communication Agent</b><span>Drafts a personalized, tone-matched reminder you can edit before a (simulated) send.</span></li>
+      <li><b>Orchestrator</b><span>Pipeline bar at the top shows Intake → Triage → Scheduling → Communication lighting up as each runs.</span></li>
+    </ul>
+
+    <h3 style="font-size:20px;margin:24px 0 8px">⭐ Added beyond the original plan</h3>
+    <ul class="stack-list">
+      <li><b>Emergency tier</b><span>A level above High. Life-threatening symptoms trigger a red "call 911 / go to ER" banner and pause scheduling. Framed as a safety prompt, NOT a diagnosis.</span></li>
+      <li><b>Urgency dashboard</b><span>Color-coded High / Medium / Low patient cards at a glance (contrast fixed for light &amp; dark mode).</span></li>
+      <li><b>Slot accumulation</b><span>"Show more options" adds fresh slots to the list (de-duplicated) so patients can compare and go back.</span></li>
+      <li><b>Demo-mode fallback</b><span>Never crashes if the API key is missing or rate-limited — shows a labeled sample response instead.</span></li>
+      <li><b>Clinical theme</b><span>Teal/blue palette, gradient header, pill tabs — looks like a real product, not a default Streamlit app.</span></li>
+    </ul>
+
+    <h3 style="font-size:20px;margin:24px 0 8px">🎯 Left to do (the prize-winning part)</h3>
+    <ul class="stack-list">
+      <li><b>Demo video (1–3 min)</b><span>Story-first: Aryan's sister → one patient flows through all 3 agents. Narrate the agents AND show the code. Rules: AI may NOT write the video.</span></li>
+      <li><b>Devpost write-up</b><span>Problem, what it does, how the agents coordinate, the stack, and the roadmap. Rules: AI may NOT write this text.</span></li>
+      <li><b>AI disclosure</b><span>State on the Devpost page that we used Google Gemini (and the Replit Agent) — required by the rules, doesn't count against us.</span></li>
+      <li><b>Submit</b><span>All 3 teammates added on Devpost + registration form + school names + source code link. Aim: 8 PM Sun (hard deadline 11:45 PM EDT).</span></li>
+    </ul>
+
+    <h3 style="font-size:20px;margin:24px 0 8px">📝 Key decisions we locked</h3>
+    <ul class="stack-list">
+      <li><b>Gemini over Claude</b><span>Free tier was enough; routed through call_ai() so we can still swap to Claude in minutes if needed. Watch the ~10 req/min free limit during the demo — click at a normal pace.</span></li>
+      <li><b>Own calendar, not Google</b><span>In-memory list avoids an OAuth rabbit hole and keeps everything explainable.</span></li>
+      <li><b>Simulated send</b><span>Real SMS/email (Twilio/SendGrid) stays as roadmap, not a 2-day build.</span></li>
+      <li><b>Vibe-coding done right</b><span>The Agent built fast, but we must be able to explain every line in the video — that's a scored rule.</span></li>
+      <li><b>Hosting note</b><span>If we move to local VS Code, keep the Replit alive as the public demo link (localhost isn't visible to judges).</span></li>
+    </ul>
+  </section>
+
+  <!-- CHAT -->
+  <section class="panel" id="chat">
+    <div class="eyebrow">Quick notes between us</div>
+    <h2 class="section">Team chat.</h2>
+    <div class="chat-note">⚠️ Heads up: this board saves to <b>your own browser only</b> — it doesn't sync live between three different laptops (no server). Great for jotting notes, planning while screen-sharing, or one shared computer. For live group chat, use your Discord.</div>
+    <div class="chat-box">
+      <div class="chat-log" id="chatLog"></div>
+      <div class="chat-input">
+        <input type="text" id="chatName" placeholder="Your name" maxlength="20">
+        <input type="text" id="chatMsg" placeholder="Type a note and hit Enter…" maxlength="500">
+        <button class="send-btn" id="sendBtn">Send</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // ---------- TABS ----------
+  const tabs = document.getElementById('tabs');
+  tabs.addEventListener('click', e=>{
+    const b = e.target.closest('.tab-btn'); if(!b) return;
+    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('show'));
+    b.classList.add('active');
+    document.getElementById(b.dataset.tab).classList.add('show');
+  });
+
+  // ---------- PLAN DATA ----------
+  const PHASES = [
+    {name:"Setup", when:"Fri night", tasks:[
+      {id:"t1", t:"Create Replit + blank Streamlit app", d:"Python repl, 3-tab skeleton that runs.", who:"Person A"},
+      {id:"t2", t:"Build the Intake Form", d:"Name, how they feel, SMS/email choice, submit.", who:"Person B"},
+    ]},
+    {name:"AI Agents", when:"Saturday", tasks:[
+      {id:"t3", t:"Triage Agent", d:"Reads symptoms → urgency level + recommended timing.", who:"Person A"},
+      {id:"t4", t:"Calendar + Scheduling Agent", d:"Sample calendar + find/add/view/search slots.", who:"A + B"},
+      {id:"t5", t:"Communication Agent", d:"Drafts SMS/email + simulated Send button.", who:"Person A"},
+      {id:"t6", t:"Wire agents together (orchestrator)", d:"One button runs the full chain in sequence.", who:"Person A"},
+    ]},
+    {name:"Finish", when:"Sat night → Sunday", tasks:[
+      {id:"t7", t:"Polish UI + agent callout boxes", d:"Looks like a real tool; agent reasoning visible.", who:"Person B"},
+      {id:"t8", t:"Record video + write Devpost page", d:"Aryan's-sister story; narrate the agents & code.", who:"Person C"},
+      {id:"t9", t:"Register everyone + submit by 8 PM", d:"All 3 on Devpost, forms filled, code linked.", who:"All"},
+    ]},
+  ];
+  const ALL_IDS = PHASES.flatMap(p=>p.tasks.map(t=>t.id));
+  const STORE_KEY = "medschedule_progress_v1";
+  const CHAT_KEY  = "medschedule_chat_v1";
+
+  function loadState(){
+    try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }catch(e){ return {}; }
+  }
+  function saveState(s){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(s)); }catch(e){} }
+
+  let state = loadState();
+
+  function renderPlan(){
+    const root = document.getElementById('planRoot');
+    root.innerHTML = '';
+    PHASES.forEach(ph=>{
+      const wrap = document.createElement('div'); wrap.className='phase';
+      wrap.innerHTML = `<div class="phase-head"><h3>${ph.name}</h3><span class="when">${ph.when}</span></div>`;
+      ph.tasks.forEach(tk=>{
+        const done = !!state[tk.id];
+        const el = document.createElement('div');
+        el.className = 'task'+(done?' done':'');
+        el.dataset.id = tk.id;
+        el.innerHTML = `
+          <div class="box"><svg width="13" height="13" viewBox="0 0 13 13"><path d="M2 7L5 10L11 3" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="body"><div class="t">${tk.t}</div><div class="d">${tk.d}</div></div>
+          <div class="who">${tk.who}</div>`;
+        el.addEventListener('click', ()=>{
+          state[tk.id] = !state[tk.id];
+          saveState(state);
+          el.classList.toggle('done', state[tk.id]);
+          updateProgress();
+        });
+        wrap.appendChild(el);
+      });
+      root.appendChild(wrap);
+    });
+    updateProgress();
+  }
+
+  function updateProgress(){
+    const done = ALL_IDS.filter(id=>state[id]).length;
+    const pct = Math.round((done/ALL_IDS.length)*100);
+    document.getElementById('progFill').style.width = pct+'%';
+    document.getElementById('pctLabel').textContent = pct+'%';
+    document.getElementById('celebrate').classList.toggle('show', pct===100);
+  }
+
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    state = {}; saveState(state); renderPlan();
+  });
+
+  // ---------- CHAT (local only) ----------
+  function loadChat(){ try{ return JSON.parse(localStorage.getItem(CHAT_KEY)) || []; }catch(e){ return []; } }
+  function saveChat(c){ try{ localStorage.setItem(CHAT_KEY, JSON.stringify(c)); }catch(e){} }
+  let chat = loadChat();
+
+  function renderChat(){
+    const log = document.getElementById('chatLog');
+    if(chat.length===0){ log.innerHTML = '<div class="chat-empty">No notes yet. Drop the first one below 👇</div>'; return; }
+    const myName = (document.getElementById('chatName').value||'').trim().toLowerCase();
+    log.innerHTML = '';
+    chat.forEach(m=>{
+      const d = document.createElement('div');
+      d.className = 'msg'+(myName && m.who.toLowerCase()===myName?' mine':'');
+      d.innerHTML = `<div class="who">${escapeHtml(m.who)}</div><div>${escapeHtml(m.text)}</div><div class="time">${m.time}</div>`;
+      log.appendChild(d);
+    });
+    log.scrollTop = log.scrollHeight;
+  }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function sendMsg(){
+    const nameEl = document.getElementById('chatName'), msgEl = document.getElementById('chatMsg');
+    const who = (nameEl.value||'').trim() || 'Anon';
+    const text = (msgEl.value||'').trim();
+    if(!text) return;
+    const now = new Date();
+    const time = now.toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+    chat.push({who, text, time});
+    saveChat(chat); msgEl.value=''; renderChat();
+  }
+  document.getElementById('sendBtn').addEventListener('click', sendMsg);
+  document.getElementById('chatMsg').addEventListener('keydown', e=>{ if(e.key==='Enter') sendMsg(); });
+  document.getElementById('chatName').addEventListener('input', renderChat);
+
+  // ---------- WIREFRAME SUB-TABS ----------
+  const wfToggle = document.getElementById('wfToggle');
+  if(wfToggle){
+    wfToggle.addEventListener('click', e=>{
+      const b = e.target.closest('.wf-tab'); if(!b) return;
+      wfToggle.querySelectorAll('.wf-tab').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.wf-screen').forEach(x=>x.classList.remove('show'));
+      b.classList.add('active');
+      document.getElementById(b.dataset.wf).classList.add('show');
+    });
+  }
+
+  // ---------- DISPLAY SETTINGS (font size + color theme) ----------
+  const PREF_KEY = "medschedule_display_v1";
+  function loadPrefs(){ try{ return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; }catch(e){ return {}; } }
+  function savePrefs(p){ try{ localStorage.setItem(PREF_KEY, JSON.stringify(p)); }catch(e){} }
+  let prefs = loadPrefs();
+
+  function applyFontSize(fs){
+    document.body.classList.remove('fs-small','fs-medium','fs-large');
+    document.body.classList.add(fs);
+    document.querySelectorAll('#fsRow .opt').forEach(b=>b.classList.toggle('active', b.dataset.fs===fs));
+  }
+  function applyTheme(theme){
+    if(theme==='light'){ document.body.removeAttribute('data-theme'); }
+    else{ document.body.setAttribute('data-theme', theme); }
+    document.querySelectorAll('#themeRow .opt').forEach(b=>b.classList.toggle('active', b.dataset.theme===theme));
+  }
+
+  // restore saved choices (defaults: medium + light)
+  applyFontSize(prefs.fs || 'fs-medium');
+  applyTheme(prefs.theme || 'light');
+
+  document.getElementById('fsRow').addEventListener('click', e=>{
+    const b = e.target.closest('.opt'); if(!b) return;
+    applyFontSize(b.dataset.fs); prefs.fs = b.dataset.fs; savePrefs(prefs);
+  });
+  document.getElementById('themeRow').addEventListener('click', e=>{
+    const b = e.target.closest('.opt'); if(!b) return;
+    applyTheme(b.dataset.theme); prefs.theme = b.dataset.theme; savePrefs(prefs);
+  });
+
+  // popover open/close
+  const gearBtn = document.getElementById('gearBtn');
+  const pop = document.getElementById('settingsPop');
+  gearBtn.addEventListener('click', e=>{ e.stopPropagation(); pop.classList.toggle('open'); });
+  document.addEventListener('click', e=>{
+    if(pop.classList.contains('open') && !pop.contains(e.target) && e.target!==gearBtn) pop.classList.remove('open');
+  });
+
+  // ---------- INIT ----------
+  renderPlan();
+  renderChat();
+</script>
+</body>
+</html>

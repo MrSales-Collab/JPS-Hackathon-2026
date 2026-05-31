@@ -1,670 +1,556 @@
-import os
-import json
-import re
 import streamlit as st
-import pandas as pd
-from datetime import date, timedelta
-import random
-
-st.set_page_config(page_title="Healthcare Scheduler", layout="wide")
-
-DISCLAIMER = (
-    ":warning: **Not medical advice — for scheduling logistics only.** "
-    "Always consult a qualified healthcare professional for medical decisions."
+import streamlit.components.v1 as components
+from datetime import date
+from utils import (
+    init_session_state, apply_theme, _t, logo_html,
+    DOCTORS, SPECIALTIES, _WF_DEFAULT, _active_provider,
+    _FONT_OPTS, _COLOR_OPTS,
+    handle_user_input, book_slot, send_reminder,
+    scheduling_agent_structured, render_footer, render_header,
 )
 
-# ---------------------------------------------------------------------------
-# AI PROVIDER ABSTRACTION
-# ---------------------------------------------------------------------------
+st.set_page_config(page_title="ScheduleMD", page_icon="🩺", layout="wide")
+init_session_state()
 
-AI_PROVIDER = "gemini"
+# Page routing state
+st.session_state.setdefault("page", "home")
 
-def _demo_response(prompt: str) -> str:
-    if "triage" in prompt.lower() or "urgency" in prompt.lower():
-        return (
-            "**[DEMO MODE]**\n\n"
-            "**Urgency Level:** Medium\n"
-            "**Recommended Timing:** Within 3–5 business days\n\n"
-            "Based on the described symptoms, this appears to be a non-emergency "
-            "situation that warrants timely but not immediate attention. "
-            "A standard appointment slot should be sufficient."
-        )
-    if "slot" in prompt.lower() or "schedul" in prompt.lower():
-        today = date.today()
-        return (
-            "**[DEMO MODE]**\n\n"
-            f"**Slot 1:** {today + timedelta(days=2)} at 9:00 AM — earliest available morning slot, "
-            "good for medium-urgency cases.\n\n"
-            f"**Slot 2:** {today + timedelta(days=3)} at 2:30 PM — afternoon availability, "
-            "low wait time expected.\n\n"
-            f"**Slot 3:** {today + timedelta(days=5)} at 11:00 AM — later option if patient needs flexibility."
-        )
-    return (
-        "**[DEMO MODE]**\n\n"
-        "Dear Patient,\n\n"
-        "This is a friendly reminder about your upcoming appointment. "
-        "Please arrive 10 minutes early and bring any relevant medical records. "
-        "If you need to reschedule, contact us at least 24 hours in advance.\n\n"
-        "Best regards,\nThe Scheduling Team"
-    )
+apply_theme()
 
-
-def _call_gemini(prompt: str) -> str:
-    from google import genai
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not set")
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model="gemini-flash-latest",
-        contents=prompt,
-    )
-    return response.text
-
-
-_last_ai_error: str = ""
-
-def call_ai(prompt: str) -> tuple[str, bool]:
-    global _last_ai_error
-    try:
-        if AI_PROVIDER == "gemini":
-            result = _call_gemini(prompt)
-            _last_ai_error = ""
-            return result, False
-        else:
-            raise ValueError(f"Unknown AI_PROVIDER: {AI_PROVIDER}")
-    except Exception as e:
-        _last_ai_error = f"{type(e).__name__}: {str(e)[:300]}"
-        return _demo_response(prompt), True
-
+# render_header imported from utils
 
 # ---------------------------------------------------------------------------
-# AGENT PROMPTS
+# PAGE: HOME
 # ---------------------------------------------------------------------------
 
-def triage_agent(reason: str, patient_name: str, doctor: str) -> tuple[str, bool]:
-    prompt = f"""
-You are a medical scheduling triage assistant. Your job is scheduling logistics only — not clinical diagnosis.
+def page_home():
+    t = _t(); p = t["primary"]
 
-Patient: {patient_name}
-Assigned Doctor: {doctor}
-Reason for visit: {reason}
+    hero_l, hero_r = st.columns([3, 2], gap="large")
+    with hero_l:
+        st.markdown(f"""
+<div style='padding:3rem 2rem 1rem 2.5rem;position:relative'>
+  <div style='position:absolute;top:-20px;left:-10px;width:160px;height:160px;
+    background:radial-gradient(circle,{p}18 1.5px,transparent 1.5px);
+    background-size:18px 18px;border-radius:50%;pointer-events:none'></div>
+  <div style='position:relative'>
+    <div style='font-size:clamp(3rem,7vw,5.2rem);font-weight:900;
+      line-height:1;letter-spacing:-0.04em;color:{p};
+      font-family:Georgia,serif;margin-bottom:.3rem'>ScheduleMD</div>
+    <div style='font-size:1.05em;font-weight:600;letter-spacing:.18em;
+      text-transform:uppercase;color:{t["muted"]};margin-bottom:1.1rem'>
+      Welcome, Scheduler</div>
+    <div style='font-size:1em;color:{t["muted"]};max-width:420px;
+      line-height:1.75;margin-bottom:2rem'>
+      AI-powered front-desk assistant — handles triage, scheduling,
+      and patient reminders so your team can focus on care.
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+        if st.button("LET'S START ORGANIZING  →", key="cta"):
+            st.session_state.page = "calendar"; st.rerun()
 
-Based solely on the stated reason, respond with:
-1. Urgency Level: Low / Medium / High
-2. Recommended appointment timing (e.g. "within 24 hours", "within 3–5 days", "routine, within 2 weeks")
-3. A one-sentence scheduling note for the front desk
+    with hero_r:
+        st.markdown("<div style='padding:2rem 1rem'>", unsafe_allow_html=True)
+        for (icon, label, bg, color), pos in zip(
+            [("👨‍⚕️","Smart Triage",   "#e8f5ec", p),
+             ("📅","Easy Scheduling", "#f0f8ff", "#0072b2"),
+             ("🤝","Team Ready",      "#fff8e8", "#c49a00")],
+            ["margin-left:60px;margin-bottom:-28px",
+             "margin-left:0px;margin-bottom:-28px",
+             "margin-left:80px"]
+        ):
+            st.markdown(f"""
+<div style='display:inline-block;{pos}'>
+  <div style='width:155px;height:155px;border-radius:50%;
+    background:linear-gradient(135deg,{bg},{color}22);
+    border:3px solid {color}44;
+    display:flex;flex-direction:column;align-items:center;
+    justify-content:center;box-shadow:0 8px 24px {color}22'>
+    <div style='font-size:2.8em'>{icon}</div>
+    <div style='font-size:.7em;font-weight:600;color:{color};
+      margin-top:5px;text-align:center;padding:0 10px'>{label}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-Format your response with clear bold labels. Keep it concise (3–4 lines max).
-End with: "Not medical advice — for scheduling logistics only."
-""".strip()
-    return call_ai(prompt)
+    # Quick-link cards
+    _muted = t['muted']
+    st.markdown(f"<div style='padding:.5rem 2.5rem 0;font-size:.78em;font-weight:700;"
+                f"letter-spacing:.15em;text-transform:uppercase;color:{_muted}'"
+                f">Where would you like to go?</div>", unsafe_allow_html=True)
 
+    cc1, cc2, cc3 = st.columns(3, gap="medium")
+    _cs = (f"border:1.5px solid {t['border']};border-radius:16px;padding:28px 24px;"
+           f"background:{t['card']};box-shadow:0 4px 16px -6px rgba(0,0,0,.08);"
+           f"text-align:center")
+    for col, icon, title, desc, page_key, highlight in [
+        (cc1, "📖", "About Us",    "Why we built this and the problem we're solving.", "about",    False),
+        (cc2, "💬", "Feedback",    "Help us improve with your thoughts and rating.",   "feedback", False),
+        (cc3, "📅", "Calendar",    "View appointments and chat with the AI assistant.","calendar", True),
+    ]:
+        extra = f";border-color:{p};background:linear-gradient(135deg,{t['bg2']},{t['card']})" if highlight else ""
+        title_color = p if highlight else t["text"]
+        with col:
+            st.markdown(f"""
+<div style='{_cs}{extra}'>
+  <div style='font-size:2.3em;margin-bottom:10px'>{icon}</div>
+  <div style='font-weight:700;font-size:1.05em;color:{title_color};margin-bottom:6px'>{title}</div>
+  <div style='font-size:.85em;color:{t["muted"]};line-height:1.5'>{desc}</div>
+</div>""", unsafe_allow_html=True)
+            if st.button(f"Open {title} →", key=f"card_{page_key}", use_container_width=True):
+                st.session_state.page = page_key; st.rerun()
 
-def scheduling_agent(patient_name: str, urgency: str, doctor: str, appointments_df: pd.DataFrame) -> tuple[str, bool]:
-    booked = appointments_df[appointments_df["Doctor"] == doctor][["Date", "Time", "Status"]].to_string(index=False)
-    prompt = f"""
-You are a healthcare scheduling assistant. Suggest the 3 best available appointment slots.
-
-New patient: {patient_name}
-Doctor: {doctor}
-Urgency: {urgency}
-Already booked slots for {doctor}:
-{booked}
-
-Suggest 3 concrete date/time slots (avoid weekends) that are not already booked. For each slot give:
-- The date and time
-- A brief reason why this slot suits the urgency level
-
-Format as a numbered list with bold slot labels. Today is {date.today()}.
-End with: "Not medical advice — for scheduling logistics only."
-""".strip()
-    return call_ai(prompt)
-
-
-def scheduling_agent_structured(patient_name: str, urgency: str, doctor: str, appointments_df: pd.DataFrame):
-    """
-    Like scheduling_agent, but asks the AI for JSON so we can render clickable,
-    bookable slot buttons. Returns (list_of_slots, is_demo).
-    Each slot is a dict: {"date","time","reason"}.
-    """
-    booked = appointments_df[appointments_df["Doctor"] == doctor][["Date", "Time", "Status"]].to_string(index=False)
-    prompt = f"""
-You are a healthcare scheduling assistant. Suggest the 3 best available appointment slots.
-
-New patient: {patient_name}
-Doctor: {doctor}
-Urgency: {urgency}
-Today is {date.today()}.
-Already booked slots for {doctor}:
-{booked}
-
-Return ONLY valid JSON — a list of exactly 3 objects, no text before or after, no markdown fences.
-Each object must have these keys:
-- "date": a weekday date in YYYY-MM-DD format (no weekends), not already booked
-- "time": a time like "09:00 AM"
-- "reason": one short sentence on why this slot suits the urgency level
-
-Example format:
-[{{"date":"2026-06-01","time":"09:00 AM","reason":"Earliest slot, good for high urgency."}}]
-""".strip()
-    raw, is_demo = call_ai(prompt)
-    slots = _parse_slots(raw, doctor, urgency)
-    return slots, is_demo
-
-
-def _parse_slots(raw: str, doctor: str, urgency: str):
-    """Pull a list of slot dicts out of the AI's reply. Falls back to safe defaults."""
-    # Try to find a JSON array in the response (strip code fences if present).
-    cleaned = raw.replace("```json", "").replace("```", "").strip()
-    match = re.search(r"\[.*\]", cleaned, re.DOTALL)
-    if match:
-        try:
-            data = json.loads(match.group(0))
-            slots = []
-            for item in data[:3]:
-                if isinstance(item, dict) and "date" in item and "time" in item:
-                    slots.append({
-                        "date": str(item.get("date", "")),
-                        "time": str(item.get("time", "")),
-                        "reason": str(item.get("reason", "Suggested slot.")),
-                    })
-            if slots:
-                return slots
-        except Exception:
-            pass
-    # Fallback: generate three sensible weekday slots so the UI always works.
-    return _fallback_slots(urgency)
-
-
-def _fallback_slots(urgency: str):
-    """Deterministic safe slots if the AI reply can't be parsed."""
-    times = ["09:00 AM", "02:00 PM", "11:00 AM"]
-    out = []
-    d = date.today()
-    added = 0
-    offset = 1
-    while added < 3:
-        cand = d + timedelta(days=offset)
-        offset += 1
-        if cand.weekday() >= 5:  # skip Sat/Sun
-            continue
-        out.append({
-            "date": str(cand),
-            "time": times[added],
-            "reason": f"Open weekday slot suitable for {urgency.lower()} urgency.",
-        })
-        added += 1
-    return out
-
-
-def communication_agent(patient_name: str, doctor: str, appt_date: str, appt_time: str, urgency: str) -> tuple[str, bool]:
-    prompt = f"""
-You are a healthcare communication assistant drafting a patient reminder message.
-
-Patient: {patient_name}
-Doctor: {doctor}
-Appointment: {appt_date} at {appt_time}
-Urgency level: {urgency}
-
-Draft a short, warm, professional reminder message (3–4 sentences). Mention:
-- The appointment date and time
-- The doctor's name
-- One practical preparation tip appropriate to the urgency level
-- Contact info placeholder: [CLINIC_PHONE]
-
-End with: "Not medical advice — for scheduling logistics only."
-""".strip()
-    return call_ai(prompt)
-
+    st.markdown(f"<div style='padding:1.5rem 2.5rem .5rem;display:flex;gap:8px;align-items:center'>"
+                f"<div style='width:8px;height:8px;border-radius:50%;background:{p}'></div>"
+                f"<div style='width:8px;height:8px;border-radius:50%;background:{p}66'></div>"
+                f"<div style='width:8px;height:8px;border-radius:50%;background:{p}33'></div>"
+                f"<div style='font-size:.75em;color:{t['muted']};margin-left:8px'>"
+                f"HackJPS 2026 · Healthcare Track · Best Use of AI/ML</div></div>",
+                unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
-# SESSION STATE
+# PAGE: CALENDAR
 # ---------------------------------------------------------------------------
 
-DOCTORS = ["Dr. Smith", "Dr. Jones", "Dr. Brown"]
-SPECIALTIES = {
-    "Dr. Smith": "General Practice",
-    "Dr. Jones": "Cardiology",
-    "Dr. Brown": "Orthopedics",
-}
+def _render_calendar_table():
+    """Shared calendar table used in both layouts."""
+    t = _t(); p = t["primary"]
+    today_str = str(date.today())
+    appts = st.session_state.appointments
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total", len(appts))
+    m2.metric("Today", len(appts[appts["Date"] == today_str]))
+    m3.metric("Confirmed", len(appts[appts["Status"] == "Confirmed"]))
+    m4.metric("Urgent", len(appts[appts["Urgency"].isin(["High","Emergency"])]))
 
-if "appointments" not in st.session_state:
-    today = date.today()
-    st.session_state.appointments = pd.DataFrame([
-        {"Patient Name": "Alice Johnson",  "DOB": "1985-03-12", "Phone": "555-0101", "Doctor": "Dr. Smith", "Date": str(today + timedelta(days=1)), "Time": "09:00 AM", "Reason": "Annual checkup",        "Status": "Confirmed", "Urgency": "Low"},
-        {"Patient Name": "Bob Martinez",   "DOB": "1972-07-24", "Phone": "555-0102", "Doctor": "Dr. Jones", "Date": str(today + timedelta(days=2)), "Time": "10:30 AM", "Reason": "Heart palpitations",    "Status": "Pending",   "Urgency": "High"},
-        {"Patient Name": "Carol Lee",      "DOB": "1990-11-05", "Phone": "555-0103", "Doctor": "Dr. Brown", "Date": str(today + timedelta(days=3)), "Time": "02:00 PM", "Reason": "Knee pain follow-up",   "Status": "Confirmed", "Urgency": "Medium"},
-        {"Patient Name": "David Kim",      "DOB": "1968-01-30", "Phone": "555-0104", "Doctor": "Dr. Smith", "Date": str(today + timedelta(days=5)), "Time": "11:00 AM", "Reason": "Blood pressure check",  "Status": "Confirmed", "Urgency": "Medium"},
-        {"Patient Name": "Emma Torres",    "DOB": "2001-06-18", "Phone": "555-0105", "Doctor": "Dr. Jones", "Date": str(today + timedelta(days=7)), "Time": "03:30 PM", "Reason": "EKG test",              "Status": "Pending",   "Urgency": "Medium"},
-    ])
-
-if "messages" not in st.session_state:
-    st.session_state.messages = pd.DataFrame([
-        {"Patient Name": "Alice Johnson", "Doctor": "Dr. Smith", "Date": str(date.today() - timedelta(days=2)), "Message": "Reminder: Your appointment is tomorrow at 9:00 AM.", "Type": "Reminder", "Status": "Sent"},
-        {"Patient Name": "Bob Martinez",  "Doctor": "Dr. Jones", "Date": str(date.today() - timedelta(days=1)), "Message": "Please bring your most recent EKG results.",          "Type": "Pre-visit Instructions", "Status": "Sent"},
-    ])
-
-# --- PIPELINE STATE: tracks the journey of the current patient across agents ---
-if "pipeline" not in st.session_state:
-    st.session_state.pipeline = {
-        "patient": None, "doctor": None, "urgency": None,
-        "intake": False, "triage": False, "scheduling": False, "communication": False,
-    }
-
-# --- Widget-state defaults so the pipeline can pre-fill these programmatically ---
-st.session_state.setdefault("sched_patient", "")
-st.session_state.setdefault("sched_doc", DOCTORS[0])
-st.session_state.setdefault("sched_urgency", "Medium")
-
-# ---------------------------------------------------------------------------
-# UI HELPERS
-# ---------------------------------------------------------------------------
-
-def urgency_color(level: str) -> str:
-    return {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(level.lower(), "⚪")
-
-
-def ai_box(title: str, content: str, is_demo: bool):
-    if is_demo:
-        err = _last_ai_error
-        badge = f" *(demo mode — reason: `{err}`)*" if err else " *(demo mode — GEMINI_API_KEY not set)*"
-        st.warning(f"**{title}**{badge}\n\n{content}")
-    else:
-        st.info(f"**{title}**\n\n{content}")
-
-
-def render_pipeline():
-    """A breadcrumb bar showing which agents have run for the current patient."""
-    p = st.session_state.pipeline
-    patient = p.get("patient")
-    steps = [("📋", "Intake", p["intake"]), ("🧠", "Triage", p["triage"]),
-             ("📅", "Scheduling", p["scheduling"]), ("💬", "Communication", p["communication"])]
-    html = ("<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;"
-            "background:#f5f7fa;border:1px solid #dde3ea;border-radius:10px;padding:10px 14px;margin-bottom:10px'>"
-            "<span style='font-weight:700;color:#444;margin-right:4px'>🔗 Agent Pipeline:</span>")
-    for i, (icon, label, done) in enumerate(steps):
-        if done:
-            html += (f"<span style='background:#e3f1e6;border:1px solid #8ec79a;color:#1b6e2d;"
-                     f"border-radius:20px;padding:4px 12px;font-size:0.85em;font-weight:600'>{icon} {label} ✓</span>")
-        else:
-            html += (f"<span style='background:#fff;border:1px solid #ccc;color:#999;"
-                     f"border-radius:20px;padding:4px 12px;font-size:0.85em'>{icon} {label}</span>")
-        if i < len(steps) - 1:
-            html += "<span style='color:#bbb;font-weight:700'>→</span>"
-    if patient:
-        html += (f"<span style='margin-left:auto;color:#555;font-size:0.85em'>"
-                 f"Current patient: <b>{patient}</b></span>")
-    html += "</div>"
-    st.markdown(html, unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------------
-# TITLE + GLOBAL PIPELINE BAR
-# ---------------------------------------------------------------------------
-
-st.title("🏥 Healthcare Scheduling System")
-render_pipeline()
-
-tab1, tab2, tab3 = st.tabs(["📋 Intake", "📅 Scheduling", "💬 Communication"])
-
-# ---------------------------------------------------------------------------
-# TAB 1 — INTAKE
-# ---------------------------------------------------------------------------
-
-with tab1:
-    st.warning(DISCLAIMER)
-    st.header("Patient Intake")
-    st.subheader("Register New Patient")
-
-    with st.form("intake_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("Full Name")
-            dob  = st.date_input("Date of Birth", value=date(1990, 1, 1), min_value=date(1900, 1, 1), max_value=date.today())
-            phone = st.text_input("Phone Number")
-        with col2:
-            doctor = st.selectbox("Assign Doctor", DOCTORS)
-            reason = st.text_area("Reason for Visit")
-            st.text_input("Insurance Provider (optional)")
-
-        submitted = st.form_submit_button("Register Patient & Run Triage")
-
-    if submitted:
-        if not name or not phone or not reason:
-            st.error("Please fill in Name, Phone, and Reason for Visit.")
-        else:
-            with st.spinner("🧠 Triage Agent is assessing..."):
-                triage_result, is_demo = triage_agent(reason, name, doctor)
-
-            urgency_guess = "Medium"
-            for level in ["High", "Medium", "Low"]:
-                if level in triage_result:
-                    urgency_guess = level
-                    break
-
-            ai_box("🧠 Triage Agent Assessment", triage_result, is_demo)
-
-            appt_date = date.today() + timedelta(days=random.randint(1, 7))
-            new_row = {
-                "Patient Name": name,
-                "DOB": str(dob),
-                "Phone": phone,
-                "Doctor": doctor,
-                "Date": str(appt_date),
-                "Time": "09:00 AM",
-                "Reason": reason,
-                "Status": "Pending",
-                "Urgency": urgency_guess,
-            }
-            st.session_state.appointments = pd.concat(
-                [st.session_state.appointments, pd.DataFrame([new_row])],
-                ignore_index=True,
-            )
-            st.success(f"Patient **{name}** registered. Urgency: {urgency_color(urgency_guess)} **{urgency_guess}** — appointment pending with **{doctor}**.")
-
-            # === PIPELINE HAND-OFF #1: Triage -> Scheduling =================
-            # Reset the pipeline for this new patient and carry context forward.
-            st.session_state.pipeline = {
-                "patient": name, "doctor": doctor, "urgency": urgency_guess,
-                "intake": True, "triage": True, "scheduling": False, "communication": False,
-            }
-            # Pre-fill the Scheduling tab's inputs BEFORE Tab 2 renders below.
-            st.session_state["sched_patient"] = name
-            st.session_state["sched_doc"] = doctor
-            st.session_state["sched_urgency"] = urgency_guess
-            st.info(
-                f"↪️ **Hand-off:** Triage flagged **{urgency_guess}** urgency. "
-                f"The patient and urgency were sent to the **📅 Scheduling** tab automatically — "
-                f"open it to see the suggested slots."
-            )
-
-    st.divider()
-    st.subheader("Recent Intake Records")
-    display_cols = ["Patient Name", "DOB", "Phone", "Doctor", "Urgency", "Status"]
-    st.dataframe(st.session_state.appointments[display_cols], width="stretch", hide_index=True)
-
-# ---------------------------------------------------------------------------
-# TAB 2 — SCHEDULING
-# ---------------------------------------------------------------------------
-
-with tab2:
-    st.warning(DISCLAIMER)
-    st.header("Appointment Scheduling")
-
-    col1, col2, col3 = st.columns(3)
-    for i, doc in enumerate(DOCTORS):
-        doc_appts = st.session_state.appointments[st.session_state.appointments["Doctor"] == doc]
-        confirmed = len(doc_appts[doc_appts["Status"] == "Confirmed"])
-        pending   = len(doc_appts[doc_appts["Status"] == "Pending"])
-        [col1, col2, col3][i].metric(
-            label=f"{doc} ({SPECIALTIES[doc]})",
-            value=f"{confirmed} confirmed",
-            delta=f"{pending} pending",
-        )
-
-    st.divider()
-    st.subheader("🚦 Urgency Dashboard")
-
-    appts = st.session_state.appointments.copy()
-    high_pts   = appts[appts["Urgency"] == "High"][["Patient Name", "Doctor", "Date", "Time", "Reason", "Status"]]
-    medium_pts = appts[appts["Urgency"] == "Medium"][["Patient Name", "Doctor", "Date", "Time", "Reason", "Status"]]
-    low_pts    = appts[appts["Urgency"] == "Low"][["Patient Name", "Doctor", "Date", "Time", "Reason", "Status"]]
-
-    urg_c1, urg_c2, urg_c3 = st.columns(3)
-
-    with urg_c1:
-        st.markdown(
-            f"<div style='background:#ffd6d6;border-left:6px solid #cc0000;padding:10px 14px;border-radius:6px;margin-bottom:8px'>"
-            f"<b style='color:#cc0000'>🔴 HIGH — {len(high_pts)} patient{'s' if len(high_pts) != 1 else ''}</b>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        if len(high_pts):
-            for _, row in high_pts.iterrows():
-                st.markdown(
-                    f"<div style='background:#fff0f0;border:1px solid #ffaaaa;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-size:0.9em'>"
-                    f"<b>{row['Patient Name']}</b><br>"
-                    f"👨‍⚕️ {row['Doctor']} &nbsp;|&nbsp; 📅 {row['Date']} {row['Time']}<br>"
-                    f"<span style='color:#555'>{row['Reason']}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.caption("No high-urgency patients.")
-
-    with urg_c2:
-        st.markdown(
-            f"<div style='background:#fff8d6;border-left:6px solid #cc8800;padding:10px 14px;border-radius:6px;margin-bottom:8px'>"
-            f"<b style='color:#cc8800'>🟡 MEDIUM — {len(medium_pts)} patient{'s' if len(medium_pts) != 1 else ''}</b>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        if len(medium_pts):
-            for _, row in medium_pts.iterrows():
-                st.markdown(
-                    f"<div style='background:#fffcf0;border:1px solid #ffe08a;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-size:0.9em'>"
-                    f"<b>{row['Patient Name']}</b><br>"
-                    f"👨‍⚕️ {row['Doctor']} &nbsp;|&nbsp; 📅 {row['Date']} {row['Time']}<br>"
-                    f"<span style='color:#555'>{row['Reason']}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.caption("No medium-urgency patients.")
-
-    with urg_c3:
-        st.markdown(
-            f"<div style='background:#d6f5d6;border-left:6px solid #007700;padding:10px 14px;border-radius:6px;margin-bottom:8px'>"
-            f"<b style='color:#007700'>🟢 LOW — {len(low_pts)} patient{'s' if len(low_pts) != 1 else ''}</b>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        if len(low_pts):
-            for _, row in low_pts.iterrows():
-                st.markdown(
-                    f"<div style='background:#f0fff0;border:1px solid #90ee90;border-radius:5px;padding:8px 12px;margin-bottom:6px;font-size:0.9em'>"
-                    f"<b>{row['Patient Name']}</b><br>"
-                    f"👨‍⚕️ {row['Doctor']} &nbsp;|&nbsp; 📅 {row['Date']} {row['Time']}<br>"
-                    f"<span style='color:#555'>{row['Reason']}</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.caption("No low-urgency patients.")
-
-    st.divider()
-    st.subheader("All Appointments")
-
-    fc1, fc2 = st.columns(2)
+    fc1, fc2, fc3 = st.columns([1,1.5,1.5])
     with fc1:
-        filter_doctor = st.selectbox("Filter by Doctor", ["All"] + DOCTORS, key="filter_doctor")
+        f_doc = st.selectbox("Doctor", ["All"]+DOCTORS, key="cal_doc",
+                             label_visibility="collapsed")
     with fc2:
-        filter_status = st.selectbox("Filter by Status", ["All", "Confirmed", "Pending", "Cancelled"], key="filter_status")
+        f_urg = st.multiselect("Urgency", ["Emergency","High","Medium","Low"],
+                               default=[], key="cal_urg", placeholder="All urgencies",
+                               label_visibility="collapsed")
+    with fc3:
+        f_sta = st.multiselect("Status", ["Confirmed","Pending","Cancelled"],
+                               default=[], key="cal_sta", placeholder="All statuses",
+                               label_visibility="collapsed")
+    df = appts.copy()
+    if f_doc != "All": df = df[df["Doctor"]==f_doc]
+    if f_urg:          df = df[df["Urgency"].isin(f_urg)]
+    if f_sta:          df = df[df["Status"].isin(f_sta)]
+    df = df.sort_values(["Date","Time"]).reset_index(drop=True)
+    urg_c = {
+        "Emergency": (t["urg_hi"][0], t["urg_hi"][5]),
+        "High":      (t["urg_hi"][3], t["urg_hi"][5]),
+        "Medium":    (t["urg_med"][3],t["urg_med"][5]),
+        "Low":       (t["urg_lo"][3], t["urg_lo"][5]),
+    }
+    def _sr(row):
+        bg,fg = urg_c.get(row.get("Urgency",""),("",""))
+        return [f"background-color:{bg};color:{fg};font-weight:500"]*len(row) if bg else [""]*len(row)
+    cols = ["Date","Time","Patient Name","Doctor","Urgency","Status","Reason"]
+    df_show = df[[c for c in cols if c in df.columns]]
+    h = 380 if st.session_state.chat_open else 460
+    if not df_show.empty:
+        st.dataframe(df_show.style.apply(_sr,axis=1),
+                     use_container_width=True, hide_index=True, height=h)
+    else:
+        st.info("No appointments match the current filters.")
 
-    df = st.session_state.appointments.copy()
-    if filter_doctor != "All":
-        df = df[df["Doctor"] == filter_doctor]
-    if filter_status != "All":
-        df = df[df["Status"] == filter_status]
-    st.dataframe(df, width="stretch", hide_index=True)
 
-    st.divider()
-    st.subheader("📅 Scheduling Agent — Find Best Slots")
+def _render_rufus_panel():
+    """Rufus-style AI chat side panel — all interactions in one column."""
+    t = _t(); p = t["primary"]; wf = st.session_state.wf
 
-    # Show a note when these fields were auto-filled by the Triage hand-off.
-    _p = st.session_state.pipeline
-    if _p.get("triage") and _p.get("patient") and st.session_state.get("sched_patient") == _p.get("patient"):
-        st.caption(f"↪️ Auto-filled from the Triage Agent — urgency **{_p.get('urgency')}** carried over. Just click *Find Best Slots*.")
+    # ── Panel header ──────────────────────────────────────────────────────
+    st.markdown(f"""
+<div style='background:linear-gradient(135deg,{p},{t["primary2"]});
+  border-radius:14px 14px 0 0;padding:14px 18px;
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 8px {p}44'>
+  <div style='display:flex;align-items:center;gap:10px'>
+    <div style='width:36px;height:36px;border-radius:50%;
+      background:rgba(255,255,255,.25);
+      display:flex;align-items:center;justify-content:center;
+      font-size:18px'>✚</div>
+    <div style='color:#fff'>
+      <div style='font-weight:800;font-size:1em;letter-spacing:-.01em'>AI Assistant</div>
+      <div style='font-size:.72em;opacity:.8'>Triage · Schedule · Remind</div>
+    </div>
+  </div>
+  <span style='background:rgba(255,255,255,.2);color:#fff;
+    border-radius:20px;padding:3px 10px;font-size:.7em;font-weight:600'>
+    {_active_provider}
+  </span>
+</div>
+""", unsafe_allow_html=True)
 
-    sc1, sc2, sc3 = st.columns(3)
-    with sc1:
-        sched_patient = st.text_input("Patient Name", placeholder="e.g. Jane Doe", key="sched_patient")
-    with sc2:
-        sched_doctor  = st.selectbox("Doctor", DOCTORS, key="sched_doc")
-    with sc3:
-        sched_urgency = st.selectbox("Urgency Level", ["Low", "Medium", "High"], key="sched_urgency")
-
-    if st.button("🔍 Find Best Slots"):
-        if not sched_patient.strip():
-            st.error("Please enter a patient name.")
+    # ── Scrollable messages ────────────────────────────────────────────────
+    with st.container(height=360, border=True):
+        chat = st.session_state.chat
+        if not chat:
+            st.markdown(f"""
+<div style='text-align:center;padding:30px 8px;color:{t["muted"]};font-size:.9em'>
+  👋 Hi! Tell me about a new patient or ask about today's schedule.<br><br>
+  <em style='font-size:.88em'>"New patient Sarah, bad sore throat and fever"</em>
+</div>""", unsafe_allow_html=True)
         else:
-            with st.spinner("📅 Scheduling Agent is finding optimal slots..."):
-                slots, is_demo = scheduling_agent_structured(
-                    sched_patient, sched_urgency, sched_doctor, st.session_state.appointments
-                )
-            # Stash the results so the buttons persist across reruns.
-            st.session_state["sched_slots"] = slots
-            st.session_state["sched_slots_demo"] = is_demo
-            st.session_state["sched_slots_patient"] = sched_patient
-            st.session_state["sched_slots_doctor"] = sched_doctor
-            st.session_state["sched_slots_urgency"] = sched_urgency
+            for msg in chat:
+                role    = msg["role"]
+                content = msg["content"]
+                agent   = msg.get("agent")
+                is_demo = msg.get("is_demo", False)
 
-            # === PIPELINE HAND-OFF #2: Scheduling -> Communication =========
-            st.session_state.pipeline["scheduling"] = True
-            st.session_state.pipeline["patient"] = sched_patient
-            st.session_state.pipeline["doctor"] = sched_doctor
-            st.session_state.pipeline["urgency"] = sched_urgency
+                if role == "user":
+                    c1, c2 = st.columns([1, 4])
+                    with c2:
+                        st.markdown(
+                            f"<div style='background:{t['bubble_user_bg']};"
+                            f"color:{t['bubble_user_text']};border-radius:16px 16px 4px 16px;"
+                            f"padding:9px 13px;font-size:.88em;line-height:1.45;'>"
+                            f"{content}</div>",
+                            unsafe_allow_html=True)
+                elif agent:
+                    ac = {"🧠 Triage Agent":(t["urg_hi"][1],t["urg_hi"][3]),
+                          "📅 Scheduling Agent":(p,t["bg2"]),
+                          "💬 Communication Agent":("#c79a3c","#fffbf0")}
+                    bc, cbg = ac.get(agent,(p,t["bg2"]))
+                    db = " *(demo)*" if is_demo else ""
+                    _tc = t['text']
+                    st.markdown(
+                        f"<div style='border-left:4px solid {bc};background:{cbg};"
+                        f"border-radius:0 10px 10px 0;padding:9px 13px;margin:2px 0;"
+                        f"font-size:.85em;line-height:1.5;color:{_tc}'>"
+                        f"<b style='color:{bc}'>{agent}{db}</b><br>{content}</div>",
+                        unsafe_allow_html=True)
+                else:
+                    dm = " *(demo)*" if is_demo else ""
+                    c1, c2 = st.columns([4, 1])
+                    with c1:
+                        st.markdown(
+                            f"<div style='background:{t['bubble_bot_bg']};"
+                            f"color:{t['bubble_bot_text']};"
+                            f"border:1px solid {t['bubble_border']};"
+                            f"border-radius:16px 16px 16px 4px;"
+                            f"padding:9px 13px;font-size:.88em;line-height:1.45'>"
+                            f"{content}{dm}</div>",
+                            unsafe_allow_html=True)
 
-    # --- Render the suggested slots as clickable, bookable buttons ---
-    if st.session_state.get("sched_slots"):
-        slots = st.session_state["sched_slots"]
-        is_demo = st.session_state.get("sched_slots_demo", False)
-        s_patient = st.session_state.get("sched_slots_patient", "")
-        s_doctor = st.session_state.get("sched_slots_doctor", DOCTORS[0])
-        s_urgency = st.session_state.get("sched_slots_urgency", "Medium")
-
-        header = "📅 Scheduling Agent Suggestions"
-        if is_demo:
-            st.warning(f"**{header}** *(demo mode — reason: `{_last_ai_error}`)*\n\nClick a slot below to book it.")
-        else:
-            st.info(f"**{header}**\n\nClick a slot below to book it for **{s_patient}**.")
-
-        slot_cols = st.columns(len(slots))
-        for i, slot in enumerate(slots):
-            with slot_cols[i]:
-                st.markdown(
-                    f"<div style='background:#eef4fb;border:1px solid #b8d2ee;border-radius:8px;"
-                    f"padding:10px 12px;margin-bottom:8px;font-size:0.9em;min-height:96px'>"
-                    f"<b>Option {i+1}</b><br>"
-                    f"📅 {slot['date']}<br>🕐 {slot['time']}<br>"
-                    f"<span style='color:#555'>{slot['reason']}</span></div>",
-                    unsafe_allow_html=True,
-                )
-                if st.button(f"✅ Book {slot['time']}", key=f"book_slot_{i}"):
-                    # Book it: update existing patient row, or add a new one.
-                    appts = st.session_state.appointments
-                    mask = appts["Patient Name"] == s_patient
-                    if mask.any():
-                        appts.loc[mask, "Date"] = slot["date"]
-                        appts.loc[mask, "Time"] = slot["time"]
-                        appts.loc[mask, "Doctor"] = s_doctor
-                        appts.loc[mask, "Status"] = "Confirmed"
-                        appts.loc[mask, "Urgency"] = s_urgency
-                    else:
-                        st.session_state.appointments = pd.concat([appts, pd.DataFrame([{
-                            "Patient Name": s_patient, "DOB": "", "Phone": "",
-                            "Doctor": s_doctor, "Date": slot["date"], "Time": slot["time"],
-                            "Reason": "Scheduled via Scheduling Agent",
-                            "Status": "Confirmed", "Urgency": s_urgency,
-                        }])], ignore_index=True)
-
-                    # Hand-off to Communication with the booked details.
-                    st.session_state["comm_doctor"] = s_doctor
-                    if s_patient in st.session_state.appointments["Patient Name"].values:
-                        st.session_state["comm_patient"] = s_patient
-                    st.session_state.pop("sched_slots", None)  # clear the buttons
-                    st.success(
-                        f"✅ Booked **{s_patient}** with **{s_doctor}** on "
-                        f"**{slot['date']} at {slot['time']}** (status: Confirmed). "
-                        f"↪️ Sent to the **💬 Communication** tab."
-                    )
-                    st.rerun()
-
-    st.divider()
-    st.subheader("Update Appointment Status")
-
-    with st.form("update_form"):
-        uc1, uc2 = st.columns(2)
-        with uc1:
-            selected_patient = st.selectbox("Select Patient", st.session_state.appointments["Patient Name"].tolist())
-        with uc2:
-            new_status = st.selectbox("New Status", ["Confirmed", "Pending", "Cancelled"])
-        if st.form_submit_button("Update Status"):
-            st.session_state.appointments.loc[
-                st.session_state.appointments["Patient Name"] == selected_patient, "Status"
-            ] = new_status
-            st.success(f"Updated **{selected_patient}**'s status to **{new_status}**.")
+    # ── Slot booking ───────────────────────────────────────────────────────
+    if wf["stage"] == "scheduling" and wf.get("pending_slots"):
+        sc = st.columns(min(len(wf["pending_slots"][:3]), 3))
+        for i, sl in enumerate(wf["pending_slots"][:3]):
+            with sc[i]:
+                st.markdown(f"<div style='text-align:center;font-size:.8em;"
+                            f"font-weight:600;color:{p};padding:4px 0'>"
+                            f"📅 {sl['date']}<br>{sl['time']}</div>",
+                            unsafe_allow_html=True)
+                if st.button("Book", key=f"sl_{i}", use_container_width=True):
+                    book_slot(sl)
+        if st.button("🔄 More options", key="more_sl", use_container_width=True):
+            more, _ = scheduling_agent_structured(
+                wf["patient"], wf["urgency"] or "Medium",
+                wf["doctor"], st.session_state.appointments)
+            seen = {(s["date"],s["time"]) for s in wf["pending_slots"]}
+            for s in more:
+                if (s["date"],s["time"]) not in seen:
+                    wf["pending_slots"].append(s); seen.add((s["date"],s["time"]))
             st.rerun()
 
+    # ── Reminder send ──────────────────────────────────────────────────────
+    if wf["stage"] == "comm_ready" and wf.get("comm_draft"):
+        with st.form("send_form", clear_on_submit=True):
+            edited = st.text_area("Edit reminder:", value=wf["comm_draft"], height=90,
+                                  label_visibility="collapsed")
+            if st.form_submit_button("📲 Send reminder (simulated)", use_container_width=True):
+                send_reminder(edited)
+
+    # ── Input bar ──────────────────────────────────────────────────────────
+    # Voice input component — uses Web Speech API (Chrome / Edge only)
+    _p = t["primary"]; _bdr = t["border"]; _bg2 = t["bg2"]
+    components.html(f"""
+<style>
+  body {{ margin:0; padding:0; background:transparent; overflow:hidden; }}
+  #micBtn {{
+    width:38px; height:38px; border-radius:8px;
+    background:transparent; border:1.5px solid {_bdr};
+    font-size:17px; cursor:pointer; display:flex;
+    align-items:center; justify-content:center;
+    transition:all .15s; margin:0; padding:0;
+  }}
+  #micBtn:hover {{ background:{_bg2}; border-color:{_p}; }}
+  #micBtn.rec {{
+    background:{_p}; border-color:{_p}; color:#fff;
+    animation: pulse .8s infinite;
+  }}
+  @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.55}} }}
+</style>
+<button id="micBtn" onclick="toggleMic()" title="Voice input — Chrome/Edge only">🎤</button>
+<script>
+var _recog = null, _recording = false;
+function toggleMic() {{
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {{ alert('Voice input requires Chrome or Edge.'); return; }}
+  if (_recording) {{ if (_recog) _recog.stop(); return; }}
+  _recog = new SR();
+  _recog.lang = 'en-US';
+  _recog.interimResults = false;
+  _recog.continuous = false;
+  _recog.onstart = function() {{
+    _recording = true;
+    var b = document.getElementById('micBtn');
+    b.classList.add('rec'); b.textContent = '🔴';
+  }};
+  _recog.onresult = function(e) {{
+    var txt = e.results[0][0].transcript;
+    var doc = window.parent.document;
+    var inputs = doc.querySelectorAll('input[type="text"]');
+    for (var i=0; i<inputs.length; i++) {{
+      if (inputs[i].placeholder === 'Ask AI Assistant...') {{
+        var setter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype,'value').set;
+        setter.call(inputs[i], txt);
+        inputs[i].dispatchEvent(new Event('input',{{bubbles:true}}));
+        break;
+      }}
+    }}
+  }};
+  _recog.onend = function() {{
+    _recording = false;
+    var b = document.getElementById('micBtn');
+    b.classList.remove('rec'); b.textContent = '🎤';
+  }};
+  _recog.onerror = function() {{
+    _recording = false;
+    var b = document.getElementById('micBtn');
+    b.classList.remove('rec'); b.textContent = '🎤';
+  }};
+  _recog.start();
+}}
+</script>
+""", height=46)
+
+    with st.form("chat_form", clear_on_submit=True):
+        inp_c, send_c = st.columns([5, 1])
+        with inp_c:
+            msg_in = st.text_input("msg", placeholder="Ask AI Assistant...",
+                                   label_visibility="collapsed")
+        with send_c:
+            sent = st.form_submit_button("Send", use_container_width=True)
+
+    rw1, rw2 = st.columns([3, 1])
+    with rw2:
+        if st.button("🗑️ New Chat", key="new_chat_btn", use_container_width=True):
+            st.session_state.chat = []
+            st.session_state.wf = dict(_WF_DEFAULT)
+            st.rerun()
+
+    if sent and msg_in.strip():
+        handle_user_input(msg_in)
+
+
+def page_calendar():
+    t = _t(); p = t["primary"]
+    chat_open = st.session_state.chat_open
+
+    # Page header row: title + chat toggle button
+    h1, h2 = st.columns([5, 1])
+    with h1:
+        _mut = t['muted']
+        _tc = t['text']; _mut = t['muted']
+        st.markdown(
+            f"<div style='padding:14px 28px 2px'>"
+            f"<div style='font-size:1.75em;font-weight:800;color:{_tc};"
+            f"letter-spacing:-.02em;line-height:1.1'>📅 Appointment Calendar</div>"
+            f"<div style='font-size:.82em;color:{_mut};margin-top:3px'>"
+            f"View, filter and manage all clinic appointments</div>"
+            f"</div>",
+            unsafe_allow_html=True)
+    with h2:
+        st.markdown("<div style='padding-top:16px'>", unsafe_allow_html=True)
+        btn_lbl = "✕ Close Chat" if chat_open else "💬 AI Chat"
+        if st.button(btn_lbl, key="chat_toggle", use_container_width=True):
+            st.session_state.chat_open = not chat_open
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Main layout: calendar always left, chat panel slides in on right
+    if chat_open:
+        col_cal, col_chat = st.columns([3, 2], gap="small")
+        with col_cal:
+            _render_calendar_table()
+        with col_chat:
+            _render_rufus_panel()
+    else:
+        _render_calendar_table()
+
 # ---------------------------------------------------------------------------
-# TAB 3 — COMMUNICATION
+# PAGE: ABOUT US
 # ---------------------------------------------------------------------------
 
-with tab3:
-    st.warning(DISCLAIMER)
-    st.header("Patient Communication")
+def page_about():
+    t = _t(); p = t["primary"]
+    st.markdown(f"""
+<div style='padding:3rem 4rem 2rem;max-width:900px;margin:0 auto'>
+  <div style='font-size:.78em;font-weight:700;letter-spacing:.2em;
+    text-transform:uppercase;color:{p};margin-bottom:12px'>Our Story</div>
+  <h1 style='font-size:clamp(2rem,4vw,3rem);font-weight:900;
+    letter-spacing:-.03em;color:{t["text"]};line-height:1.1;margin-bottom:1rem'>
+    A real person.<br>A real headache.</h1>
+  <p style='font-size:1.05em;color:{t["muted"]};max-width:600px;line-height:1.75'>
+    We're not diagnosing anyone — we're handing the front desk a smart assistant
+    for the scheduling grind.</p>
+</div>
+<div style='padding:0 4rem 2.5rem;max-width:900px;margin:0 auto'>
+  <div style='border-left:5px solid {p};padding:20px 28px;
+    background:{t["bg2"]};border-radius:0 14px 14px 0;
+    box-shadow:0 4px 16px -6px {p}33'>
+    <div style='font-size:1.22em;font-style:italic;font-weight:600;
+      color:{t["text"]};line-height:1.5;margin-bottom:12px'>
+      "There are too many phone calls to make, and patients get annoyed
+      when their appointments keep changing."</div>
+    <div style='font-size:.85em;color:{t["muted"]};font-weight:600'>
+      — Aryan's sister, front-desk receptionist · Our north star</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-    st.subheader("💬 Communication Agent — Draft Reminder")
+    p1, p2, p3 = st.columns(3, gap="medium")
+    for col, icon, title, body in [
+        (p1, "📞", "Too Many Calls",      "Hours lost dialing patients to find a time that works — every single day."),
+        (p2, "🔀", "Constant Reshuffles", "Cancellations force manual re-juggling of the entire schedule from scratch."),
+        (p3, "😤", "Frustrated Patients", "Changing appointments and missed reminders leave patients and staff stressed."),
+    ]:
+        with col:
+            st.markdown(f"""
+<div style='border:1.5px solid {t["border"]};border-radius:16px;
+  padding:26px 22px;background:{t["card"]};
+  box-shadow:0 3px 12px -6px rgba(0,0,0,.08)'>
+  <div style='font-size:2.1em;margin-bottom:12px'>{icon}</div>
+  <div style='font-weight:700;font-size:1em;color:{t["text"]};margin-bottom:7px'>{title}</div>
+  <div style='font-size:.87em;color:{t["muted"]};line-height:1.6'>{body}</div>
+</div>""", unsafe_allow_html=True)
 
-    patients = st.session_state.appointments["Patient Name"].unique().tolist()
+    st.markdown(f"""
+<div style='padding:2.5rem 4rem 1rem;max-width:900px;margin:0 auto'>
+  <div style='font-size:.78em;font-weight:700;letter-spacing:.2em;
+    text-transform:uppercase;color:{p};margin-bottom:18px'>Our solution</div>
+  <h2 style='font-size:1.7em;font-weight:800;letter-spacing:-.02em;
+    color:{t["text"]};margin-bottom:.7rem'>One orchestrator. Three specialist agents.</h2>
+</div>
+""", unsafe_allow_html=True)
 
-    # If a hand-off pre-filled a patient who isn't in the list, fall back safely.
-    if st.session_state.get("comm_patient") not in patients:
-        st.session_state.pop("comm_patient", None)
+    ag1, ag2, ag3 = st.columns(3, gap="medium")
+    for col, icon, label, color, body, tag in [
+        (ag1,"🧠","01 · Triage",        p,         "Reads symptoms → urgency + timing for the front desk.","analyze → priority"),
+        (ag2,"📅","02 · Scheduling",    "#0072b2",  "Finds open slots that match urgency; books & searches.","calendar brain"),
+        (ag3,"💬","03 · Communication", "#c79a3c",  "Drafts confirmation & reminder, tone-matched to urgency.","draft → send"),
+    ]:
+        with col:
+            st.markdown(f"""
+<div style='border:1.5px solid {color}44;border-radius:16px;
+  padding:26px 22px;background:{t["card"]};
+  box-shadow:0 3px 12px -6px {color}33'>
+  <div style='font-size:1.9em;margin-bottom:9px'>{icon}</div>
+  <div style='font-size:.7em;font-weight:700;letter-spacing:.15em;
+    text-transform:uppercase;color:{t["muted"]};margin-bottom:5px'>{label}</div>
+  <div style='font-size:.88em;color:{t["text"]};line-height:1.6;margin-bottom:12px'>{body}</div>
+  <span style='background:{color}18;color:{color};border-radius:100px;
+    padding:3px 11px;font-size:.74em;font-weight:700'>{tag}</span>
+</div>""", unsafe_allow_html=True)
 
-    cm1, cm2 = st.columns(2)
-    with cm1:
-        comm_patient = st.selectbox("Patient", patients, key="comm_patient")
-    with cm2:
-        comm_doctor = st.selectbox("From Doctor", DOCTORS, key="comm_doctor")
+    st.markdown(f"""
+<div style='padding:2rem 4rem 3rem;max-width:900px;margin:0 auto;
+  font-size:.78em;color:{t["muted"]}'>
+  HackJPS 2026 · Healthcare Track · Best Use of AI/ML
+</div>""", unsafe_allow_html=True)
 
-    patient_row = st.session_state.appointments[
-        st.session_state.appointments["Patient Name"] == comm_patient
-    ]
-    comm_date    = patient_row["Date"].values[0]    if len(patient_row) else str(date.today())
-    comm_time    = patient_row["Time"].values[0]    if len(patient_row) else "TBD"
-    comm_urgency = patient_row["Urgency"].values[0] if len(patient_row) and "Urgency" in patient_row.columns else "Medium"
+# ---------------------------------------------------------------------------
+# PAGE: FEEDBACK
+# ---------------------------------------------------------------------------
 
-    st.caption(f"Appointment on file: **{comm_date}** at **{comm_time}** · Urgency: {urgency_color(comm_urgency)} {comm_urgency}")
+def page_feedback():
+    t = _t(); p = t["primary"]
+    _, center, _ = st.columns([1, 2, 1])
+    with center:
+        st.markdown(f"""
+<div style='padding:3rem 0 1.5rem;text-align:center'>
+  <div style='font-size:.78em;font-weight:700;letter-spacing:.2em;
+    text-transform:uppercase;color:{p};margin-bottom:10px'>Share your thoughts</div>
+  <div style='font-size:2.2em;font-weight:900;letter-spacing:-.03em;
+    color:{t["text"]};margin-bottom:.5rem'>Feedback Form</div>
+  <div style='font-size:1em;font-style:italic;color:{t["muted"]};
+    opacity:.7;font-weight:600;max-width:440px;margin:0 auto;line-height:1.6'>
+    "Great products are built on honest feedback. Your thoughts
+    shape the future of ScheduleMD."</div>
+</div>
+""", unsafe_allow_html=True)
 
-    if st.button("✍️ Draft Message"):
-        with st.spinner("💬 Communication Agent is drafting..."):
-            comm_result, is_demo = communication_agent(comm_patient, comm_doctor, comm_date, comm_time, comm_urgency)
-        ai_box("💬 Communication Agent Draft", comm_result, is_demo)
-        st.session_state["last_comm_draft"] = comm_result
+        if st.session_state.get("feedback_submitted"):
+            st.success("🎉 Thank you! Your feedback helps us make ScheduleMD better.")
+            if st.button("Submit another response"):
+                st.session_state.feedback_submitted = False
+                st.session_state.feedback_rating = 0
+                st.rerun()
+        else:
+            _tt = t['text']
+            st.markdown(f"<div style='font-weight:700;font-size:.9em;color:{_tt};margin-bottom:8px'>How would you rate ScheduleMD?</div>", unsafe_allow_html=True)
+            sc = st.columns(5)
+            cur = st.session_state.get("feedback_rating", 0)
+            labels = ["Terrible","Poor","Okay","Good","Excellent"]
+            for i, sc_col in enumerate(sc):
+                with sc_col:
+                    n = i+1
+                    if st.button("⭐" if n<=cur else "☆", key=f"s{n}", help=labels[i], use_container_width=True):
+                        st.session_state.feedback_rating = n; st.rerun()
 
-        # === PIPELINE HAND-OFF #3: Communication complete ==================
-        st.session_state.pipeline["communication"] = True
-        st.session_state.pipeline["patient"] = comm_patient
-        st.success("✅ **Pipeline complete** — all three agents have run for this patient.")
+            if cur > 0:
+                st.markdown(f"<div style='text-align:center;font-size:.85em;font-weight:600;color:{p};margin-bottom:8px'>{labels[cur-1]} — {cur}/5 ⭐</div>", unsafe_allow_html=True)
 
-    if "last_comm_draft" in st.session_state:
-        st.divider()
-        st.subheader("Send Message")
-        with st.form("message_form", clear_on_submit=True):
-            msg_type = st.selectbox("Message Type", ["Reminder", "Pre-visit Instructions", "Follow-up", "Test Results", "General"])
-            msg_body = st.text_area("Edit & Send", value=st.session_state["last_comm_draft"], height=150)
-            if st.form_submit_button("Send Message"):
-                if not msg_body:
-                    st.error("Message cannot be empty.")
+            with st.form("fb_form", clear_on_submit=True):
+                thoughts = st.text_area("Your thoughts", placeholder="Put your thoughts here...",
+                                        height=140, label_visibility="collapsed")
+                sub = st.form_submit_button("Submit Feedback →", use_container_width=True)
+            if sub:
+                if cur == 0:
+                    st.warning("Please select a star rating.")
                 else:
-                    new_msg = {
-                        "Patient Name": comm_patient,
-                        "Doctor": comm_doctor,
-                        "Date": str(date.today()),
-                        "Message": msg_body,
-                        "Type": msg_type,
-                        "Status": "Sent",
-                    }
-                    st.session_state.messages = pd.concat(
-                        [st.session_state.messages, pd.DataFrame([new_msg])],
-                        ignore_index=True,
-                    )
-                    st.session_state.pop("last_comm_draft", None)
-                    st.success(f"Message sent to **{comm_patient}**.")
+                    if "feedback_entries" not in st.session_state:
+                        st.session_state.feedback_entries = []
+                    st.session_state.feedback_entries.append({"rating":cur,"thoughts":thoughts})
+                    st.session_state.feedback_submitted = True
                     st.rerun()
 
-    st.divider()
-    st.subheader("Message History")
-    st.dataframe(st.session_state.messages, width="stretch", hide_index=True)
+        entries = st.session_state.get("feedback_entries",[])
+        if entries:
+            avg = sum(e["rating"] for e in entries)/len(entries)
+            _bdr = t['border']; _mut = t['muted']
+            _s = "s" if len(entries) != 1 else ""
+            st.markdown(
+                f"<div style='margin-top:1.5rem;padding-top:1rem;"
+                f"border-top:1px solid {_bdr};display:flex;gap:16px;align-items:center'>"
+                f"<div style='text-align:center'>"
+                f"<div style='font-size:2em;font-weight:900;color:{p}'>{avg:.1f}</div>"
+                f"<div style='font-size:.74em;color:{_mut};font-weight:600'>AVG RATING</div>"
+                f"</div><div style='font-size:.85em;color:{_mut}'>"
+                f"{len(entries)} response{_s} received</div></div>",
+                unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# ROUTER
+# ---------------------------------------------------------------------------
+
+render_header(current_page=st.session_state.page)
+
+page = st.session_state.page
+if   page == "home":     page_home()
+elif page == "calendar": page_calendar()
+elif page == "about":    page_about()
+elif page == "feedback": page_feedback()
+else:                    page_home()
+
+render_footer()
