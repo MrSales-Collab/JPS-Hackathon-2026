@@ -1,4 +1,6 @@
 import os
+import json
+import re
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
@@ -13,15 +15,11 @@ DISCLAIMER = (
 
 # ---------------------------------------------------------------------------
 # AI PROVIDER ABSTRACTION
-# Swap providers by editing only this section.
-# Current provider: Google Gemini (free tier)
-# To switch: replace the body of _call_gemini() or point AI_PROVIDER elsewhere.
 # ---------------------------------------------------------------------------
 
-AI_PROVIDER = "gemini"   # change to "anthropic", "openai", etc. when ready
+AI_PROVIDER = "gemini"
 
 def _demo_response(prompt: str) -> str:
-    """Fallback used when no API key is configured or the provider is rate-limited."""
     if "triage" in prompt.lower() or "urgency" in prompt.lower():
         return (
             "**[DEMO MODE]**\n\n"
@@ -64,27 +62,15 @@ def _call_gemini(prompt: str) -> str:
     return response.text
 
 
-# Stores the last error from call_ai() for display in the UI
 _last_ai_error: str = ""
 
 def call_ai(prompt: str) -> tuple[str, bool]:
-    """
-    Single entry point for all AI calls.
-    Returns (response_text, is_demo).
-    is_demo=True means the fallback was used (no key, quota exceeded, etc.).
-    To switch providers: change AI_PROVIDER above, or add a new _call_<provider>() branch.
-    """
     global _last_ai_error
     try:
         if AI_PROVIDER == "gemini":
             result = _call_gemini(prompt)
             _last_ai_error = ""
             return result, False
-        # Future providers:
-        # elif AI_PROVIDER == "anthropic":
-        #     return _call_anthropic(prompt), False
-        # elif AI_PROVIDER == "openai":
-        #     return _call_openai(prompt), False
         else:
             raise ValueError(f"Unknown AI_PROVIDER: {AI_PROVIDER}")
     except Exception as e:
@@ -136,6 +122,82 @@ End with: "Not medical advice — for scheduling logistics only."
     return call_ai(prompt)
 
 
+def scheduling_agent_structured(patient_name: str, urgency: str, doctor: str, appointments_df: pd.DataFrame):
+    """
+    Like scheduling_agent, but asks the AI for JSON so we can render clickable,
+    bookable slot buttons. Returns (list_of_slots, is_demo).
+    Each slot is a dict: {"date","time","reason"}.
+    """
+    booked = appointments_df[appointments_df["Doctor"] == doctor][["Date", "Time", "Status"]].to_string(index=False)
+    prompt = f"""
+You are a healthcare scheduling assistant. Suggest the 3 best available appointment slots.
+
+New patient: {patient_name}
+Doctor: {doctor}
+Urgency: {urgency}
+Today is {date.today()}.
+Already booked slots for {doctor}:
+{booked}
+
+Return ONLY valid JSON — a list of exactly 3 objects, no text before or after, no markdown fences.
+Each object must have these keys:
+- "date": a weekday date in YYYY-MM-DD format (no weekends), not already booked
+- "time": a time like "09:00 AM"
+- "reason": one short sentence on why this slot suits the urgency level
+
+Example format:
+[{{"date":"2026-06-01","time":"09:00 AM","reason":"Earliest slot, good for high urgency."}}]
+""".strip()
+    raw, is_demo = call_ai(prompt)
+    slots = _parse_slots(raw, doctor, urgency)
+    return slots, is_demo
+
+
+def _parse_slots(raw: str, doctor: str, urgency: str):
+    """Pull a list of slot dicts out of the AI's reply. Falls back to safe defaults."""
+    # Try to find a JSON array in the response (strip code fences if present).
+    cleaned = raw.replace("```json", "").replace("```", "").strip()
+    match = re.search(r"\[.*\]", cleaned, re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group(0))
+            slots = []
+            for item in data[:3]:
+                if isinstance(item, dict) and "date" in item and "time" in item:
+                    slots.append({
+                        "date": str(item.get("date", "")),
+                        "time": str(item.get("time", "")),
+                        "reason": str(item.get("reason", "Suggested slot.")),
+                    })
+            if slots:
+                return slots
+        except Exception:
+            pass
+    # Fallback: generate three sensible weekday slots so the UI always works.
+    return _fallback_slots(urgency)
+
+
+def _fallback_slots(urgency: str):
+    """Deterministic safe slots if the AI reply can't be parsed."""
+    times = ["09:00 AM", "02:00 PM", "11:00 AM"]
+    out = []
+    d = date.today()
+    added = 0
+    offset = 1
+    while added < 3:
+        cand = d + timedelta(days=offset)
+        offset += 1
+        if cand.weekday() >= 5:  # skip Sat/Sun
+            continue
+        out.append({
+            "date": str(cand),
+            "time": times[added],
+            "reason": f"Open weekday slot suitable for {urgency.lower()} urgency.",
+        })
+        added += 1
+    return out
+
+
 def communication_agent(patient_name: str, doctor: str, appt_date: str, appt_time: str, urgency: str) -> tuple[str, bool]:
     prompt = f"""
 You are a healthcare communication assistant drafting a patient reminder message.
@@ -183,6 +245,18 @@ if "messages" not in st.session_state:
         {"Patient Name": "Bob Martinez",  "Doctor": "Dr. Jones", "Date": str(date.today() - timedelta(days=1)), "Message": "Please bring your most recent EKG results.",          "Type": "Pre-visit Instructions", "Status": "Sent"},
     ])
 
+# --- PIPELINE STATE: tracks the journey of the current patient across agents ---
+if "pipeline" not in st.session_state:
+    st.session_state.pipeline = {
+        "patient": None, "doctor": None, "urgency": None,
+        "intake": False, "triage": False, "scheduling": False, "communication": False,
+    }
+
+# --- Widget-state defaults so the pipeline can pre-fill these programmatically ---
+st.session_state.setdefault("sched_patient", "")
+st.session_state.setdefault("sched_doc", DOCTORS[0])
+st.session_state.setdefault("sched_urgency", "Medium")
+
 # ---------------------------------------------------------------------------
 # UI HELPERS
 # ---------------------------------------------------------------------------
@@ -192,7 +266,6 @@ def urgency_color(level: str) -> str:
 
 
 def ai_box(title: str, content: str, is_demo: bool):
-    """Render a labeled AI result box with a demo badge when applicable."""
     if is_demo:
         err = _last_ai_error
         badge = f" *(demo mode — reason: `{err}`)*" if err else " *(demo mode — GEMINI_API_KEY not set)*"
@@ -201,17 +274,43 @@ def ai_box(title: str, content: str, is_demo: bool):
         st.info(f"**{title}**\n\n{content}")
 
 
+def render_pipeline():
+    """A breadcrumb bar showing which agents have run for the current patient."""
+    p = st.session_state.pipeline
+    patient = p.get("patient")
+    steps = [("📋", "Intake", p["intake"]), ("🧠", "Triage", p["triage"]),
+             ("📅", "Scheduling", p["scheduling"]), ("💬", "Communication", p["communication"])]
+    html = ("<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;"
+            "background:#f5f7fa;border:1px solid #dde3ea;border-radius:10px;padding:10px 14px;margin-bottom:10px'>"
+            "<span style='font-weight:700;color:#444;margin-right:4px'>🔗 Agent Pipeline:</span>")
+    for i, (icon, label, done) in enumerate(steps):
+        if done:
+            html += (f"<span style='background:#e3f1e6;border:1px solid #8ec79a;color:#1b6e2d;"
+                     f"border-radius:20px;padding:4px 12px;font-size:0.85em;font-weight:600'>{icon} {label} ✓</span>")
+        else:
+            html += (f"<span style='background:#fff;border:1px solid #ccc;color:#999;"
+                     f"border-radius:20px;padding:4px 12px;font-size:0.85em'>{icon} {label}</span>")
+        if i < len(steps) - 1:
+            html += "<span style='color:#bbb;font-weight:700'>→</span>"
+    if patient:
+        html += (f"<span style='margin-left:auto;color:#555;font-size:0.85em'>"
+                 f"Current patient: <b>{patient}</b></span>")
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+
 # ---------------------------------------------------------------------------
-# TITLE
+# TITLE + GLOBAL PIPELINE BAR
 # ---------------------------------------------------------------------------
 
 st.title("🏥 Healthcare Scheduling System")
+render_pipeline()
+
+tab1, tab2, tab3 = st.tabs(["📋 Intake", "📅 Scheduling", "💬 Communication"])
 
 # ---------------------------------------------------------------------------
 # TAB 1 — INTAKE
 # ---------------------------------------------------------------------------
-
-tab1, tab2, tab3 = st.tabs(["📋 Intake", "📅 Scheduling", "💬 Communication"])
 
 with tab1:
     st.warning(DISCLAIMER)
@@ -263,6 +362,22 @@ with tab1:
                 ignore_index=True,
             )
             st.success(f"Patient **{name}** registered. Urgency: {urgency_color(urgency_guess)} **{urgency_guess}** — appointment pending with **{doctor}**.")
+
+            # === PIPELINE HAND-OFF #1: Triage -> Scheduling =================
+            # Reset the pipeline for this new patient and carry context forward.
+            st.session_state.pipeline = {
+                "patient": name, "doctor": doctor, "urgency": urgency_guess,
+                "intake": True, "triage": True, "scheduling": False, "communication": False,
+            }
+            # Pre-fill the Scheduling tab's inputs BEFORE Tab 2 renders below.
+            st.session_state["sched_patient"] = name
+            st.session_state["sched_doc"] = doctor
+            st.session_state["sched_urgency"] = urgency_guess
+            st.info(
+                f"↪️ **Hand-off:** Triage flagged **{urgency_guess}** urgency. "
+                f"The patient and urgency were sent to the **📅 Scheduling** tab automatically — "
+                f"open it to see the suggested slots."
+            )
 
     st.divider()
     st.subheader("Recent Intake Records")
@@ -377,23 +492,94 @@ with tab2:
     st.divider()
     st.subheader("📅 Scheduling Agent — Find Best Slots")
 
+    # Show a note when these fields were auto-filled by the Triage hand-off.
+    _p = st.session_state.pipeline
+    if _p.get("triage") and _p.get("patient") and st.session_state.get("sched_patient") == _p.get("patient"):
+        st.caption(f"↪️ Auto-filled from the Triage Agent — urgency **{_p.get('urgency')}** carried over. Just click *Find Best Slots*.")
+
     sc1, sc2, sc3 = st.columns(3)
     with sc1:
         sched_patient = st.text_input("Patient Name", placeholder="e.g. Jane Doe", key="sched_patient")
     with sc2:
         sched_doctor  = st.selectbox("Doctor", DOCTORS, key="sched_doc")
     with sc3:
-        sched_urgency = st.selectbox("Urgency Level", ["Low", "Medium", "High"], index=1, key="sched_urgency")
+        sched_urgency = st.selectbox("Urgency Level", ["Low", "Medium", "High"], key="sched_urgency")
 
     if st.button("🔍 Find Best Slots"):
         if not sched_patient.strip():
             st.error("Please enter a patient name.")
         else:
             with st.spinner("📅 Scheduling Agent is finding optimal slots..."):
-                sched_result, is_demo = scheduling_agent(
+                slots, is_demo = scheduling_agent_structured(
                     sched_patient, sched_urgency, sched_doctor, st.session_state.appointments
                 )
-            ai_box("📅 Scheduling Agent Suggestions", sched_result, is_demo)
+            # Stash the results so the buttons persist across reruns.
+            st.session_state["sched_slots"] = slots
+            st.session_state["sched_slots_demo"] = is_demo
+            st.session_state["sched_slots_patient"] = sched_patient
+            st.session_state["sched_slots_doctor"] = sched_doctor
+            st.session_state["sched_slots_urgency"] = sched_urgency
+
+            # === PIPELINE HAND-OFF #2: Scheduling -> Communication =========
+            st.session_state.pipeline["scheduling"] = True
+            st.session_state.pipeline["patient"] = sched_patient
+            st.session_state.pipeline["doctor"] = sched_doctor
+            st.session_state.pipeline["urgency"] = sched_urgency
+
+    # --- Render the suggested slots as clickable, bookable buttons ---
+    if st.session_state.get("sched_slots"):
+        slots = st.session_state["sched_slots"]
+        is_demo = st.session_state.get("sched_slots_demo", False)
+        s_patient = st.session_state.get("sched_slots_patient", "")
+        s_doctor = st.session_state.get("sched_slots_doctor", DOCTORS[0])
+        s_urgency = st.session_state.get("sched_slots_urgency", "Medium")
+
+        header = "📅 Scheduling Agent Suggestions"
+        if is_demo:
+            st.warning(f"**{header}** *(demo mode — reason: `{_last_ai_error}`)*\n\nClick a slot below to book it.")
+        else:
+            st.info(f"**{header}**\n\nClick a slot below to book it for **{s_patient}**.")
+
+        slot_cols = st.columns(len(slots))
+        for i, slot in enumerate(slots):
+            with slot_cols[i]:
+                st.markdown(
+                    f"<div style='background:#eef4fb;border:1px solid #b8d2ee;border-radius:8px;"
+                    f"padding:10px 12px;margin-bottom:8px;font-size:0.9em;min-height:96px'>"
+                    f"<b>Option {i+1}</b><br>"
+                    f"📅 {slot['date']}<br>🕐 {slot['time']}<br>"
+                    f"<span style='color:#555'>{slot['reason']}</span></div>",
+                    unsafe_allow_html=True,
+                )
+                if st.button(f"✅ Book {slot['time']}", key=f"book_slot_{i}"):
+                    # Book it: update existing patient row, or add a new one.
+                    appts = st.session_state.appointments
+                    mask = appts["Patient Name"] == s_patient
+                    if mask.any():
+                        appts.loc[mask, "Date"] = slot["date"]
+                        appts.loc[mask, "Time"] = slot["time"]
+                        appts.loc[mask, "Doctor"] = s_doctor
+                        appts.loc[mask, "Status"] = "Confirmed"
+                        appts.loc[mask, "Urgency"] = s_urgency
+                    else:
+                        st.session_state.appointments = pd.concat([appts, pd.DataFrame([{
+                            "Patient Name": s_patient, "DOB": "", "Phone": "",
+                            "Doctor": s_doctor, "Date": slot["date"], "Time": slot["time"],
+                            "Reason": "Scheduled via Scheduling Agent",
+                            "Status": "Confirmed", "Urgency": s_urgency,
+                        }])], ignore_index=True)
+
+                    # Hand-off to Communication with the booked details.
+                    st.session_state["comm_doctor"] = s_doctor
+                    if s_patient in st.session_state.appointments["Patient Name"].values:
+                        st.session_state["comm_patient"] = s_patient
+                    st.session_state.pop("sched_slots", None)  # clear the buttons
+                    st.success(
+                        f"✅ Booked **{s_patient}** with **{s_doctor}** on "
+                        f"**{slot['date']} at {slot['time']}** (status: Confirmed). "
+                        f"↪️ Sent to the **💬 Communication** tab."
+                    )
+                    st.rerun()
 
     st.divider()
     st.subheader("Update Appointment Status")
@@ -423,6 +609,10 @@ with tab3:
 
     patients = st.session_state.appointments["Patient Name"].unique().tolist()
 
+    # If a hand-off pre-filled a patient who isn't in the list, fall back safely.
+    if st.session_state.get("comm_patient") not in patients:
+        st.session_state.pop("comm_patient", None)
+
     cm1, cm2 = st.columns(2)
     with cm1:
         comm_patient = st.selectbox("Patient", patients, key="comm_patient")
@@ -443,6 +633,11 @@ with tab3:
             comm_result, is_demo = communication_agent(comm_patient, comm_doctor, comm_date, comm_time, comm_urgency)
         ai_box("💬 Communication Agent Draft", comm_result, is_demo)
         st.session_state["last_comm_draft"] = comm_result
+
+        # === PIPELINE HAND-OFF #3: Communication complete ==================
+        st.session_state.pipeline["communication"] = True
+        st.session_state.pipeline["patient"] = comm_patient
+        st.success("✅ **Pipeline complete** — all three agents have run for this patient.")
 
     if "last_comm_draft" in st.session_state:
         st.divider()

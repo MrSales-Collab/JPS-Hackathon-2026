@@ -1,0 +1,11 @@
+kind = "web"
+previewPath = "/"
+title = "Healthcare Scheduler"
+
+[[services]]
+localPort = 5000
+name = "Healthcare Scheduler"
+paths = ["/"]
+
+[services.development]
+run = "streamlit run app.py"
